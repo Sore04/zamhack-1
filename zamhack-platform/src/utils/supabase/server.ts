@@ -1,10 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { Database } from "../../../types/supabase";
+import { Database } from "@/types/supabase";
 
-// 1. Define the function as ASYNC
+// 1. Make the function async
 export const createClient = async () => {
-  // 2. AWAIT the cookies() call
+  // 2. Await the cookies() call
   const cookieStore = await cookies();
 
   return createServerClient<Database>(
@@ -22,7 +22,7 @@ export const createClient = async () => {
             );
           } catch {
             // The `setAll` method was called from a Server Component.
-            // This can be ignored.
+            // This can be ignored if you have middleware refreshing user sessions.
           }
         },
       },
