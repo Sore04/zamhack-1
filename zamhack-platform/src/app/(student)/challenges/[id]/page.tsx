@@ -13,11 +13,18 @@ import Link from "next/link"
 // --- Types ---
 type Challenge = Database["public"]["Tables"]["challenges"]["Row"]
 type Organization = Database["public"]["Tables"]["organizations"]["Row"]
-// FIX: Manually extending Milestone to include 'points' if it's missing in supabase.ts
-type Milestone = Database["public"]["Tables"]["milestones"]["Row"] & { points?: number }
+// Remove manual extension since supabase.ts should now have points
+type Milestone = Database["public"]["Tables"]["milestones"]["Row"]
 type Submission = Database["public"]["Tables"]["submissions"]["Row"]
 type Evaluation = Database["public"]["Tables"]["evaluations"]["Row"]
 type ChallengeParticipant = Database["public"]["Tables"]["challenge_participants"]["Row"]
+
+// Define a robust Team type that handles the nullable leader_id from DB
+interface TeamData {
+  id: string
+  name: string
+  leader_id: string | null
+}
 
 interface ChallengeProgressData {
   challenge: Challenge & {
@@ -27,8 +34,7 @@ interface ChallengeProgressData {
   participant: ChallengeParticipant | null
   submissions: Submission[]
   evaluations: Evaluation[]
-  // FIX: leader_id can be null in DB, so we allow null here to stop the red line
-  userTeam: { id: string; name: string; leader_id: string | null } | null
+  userTeam: TeamData | null
   userId: string
 }
 
@@ -120,11 +126,13 @@ async function getChallengeData(id: string): Promise<ChallengeProgressData | nul
     .eq("user_id", user.id)
     .maybeSingle()
 
-  const userTeam = teamMember?.team || null
+  // Type casting for joined data
+  const rawTeam = teamMember?.team as unknown as TeamData | null
+  const userTeam = rawTeam
 
   return {
-    challenge,
-    milestones: (milestones || []) as Milestone[],
+    challenge: challenge as any,
+    milestones: milestones || [],
     participant,
     submissions,
     evaluations,
@@ -166,11 +174,14 @@ export default async function ChallengePage({
   // --- Logic Checks ---
   const hasJoined = !!participant
   
-  // FIX: Safely handle Date parsing
-  const isRegistrationClosed =
-    challenge.registration_deadline
-      ? new Date() > new Date(challenge.registration_deadline)
-      : false
+  // Safe Date Handling
+  const deadline = challenge.registration_deadline
+  const isRegistrationClosed = deadline
+    ? new Date(deadline) < new Date()
+    : false
+    
+  const startDate = challenge.start_date
+  const endDate = challenge.end_date
 
   // Payment Variables
   const hasEntryFee = (challenge.entry_fee_amount || 0) > 0
@@ -227,7 +238,7 @@ export default async function ChallengePage({
         <div className="md:col-span-2 space-y-4">
           <div>
             <Badge variant="outline" className="mb-2">
-              {challenge.category || "General"}
+              {challenge.category || challenge.industry || "General"}
             </Badge>
             <h1 className="text-3xl font-bold">{challenge.title}</h1>
             <p className="text-lg text-muted-foreground mt-2">
@@ -240,8 +251,8 @@ export default async function ChallengePage({
               <AlertCircle className="h-4 w-4" />
               <span>
                 Registration Deadline:{" "}
-                {challenge.registration_deadline
-                  ? new Date(challenge.registration_deadline).toLocaleDateString()
+                {deadline
+                  ? new Date(deadline).toLocaleDateString()
                   : "N/A"}
               </span>
             </div>
@@ -249,8 +260,7 @@ export default async function ChallengePage({
             <div className="flex items-center gap-1">
               <Clock className="h-4 w-4" />
               <span>
-                {/* FIX: Check for null before creating Date */}
-                Duration: {challenge.start_date ? new Date(challenge.start_date).toLocaleDateString() : "TBD"} - {challenge.end_date ? new Date(challenge.end_date).toLocaleDateString() : "TBD"}
+                Duration: {startDate ? new Date(startDate).toLocaleDateString() : "TBD"} - {endDate ? new Date(endDate).toLocaleDateString() : "TBD"}
               </span>
             </div>
 
@@ -329,12 +339,16 @@ export default async function ChallengePage({
                 ) : (
                   // FREE FLOW
                   <JoinChallengeDialog
-                    challenge={challenge}
-                    trigger={
-                      <Button className="w-full font-bold shadow-md" size="lg">
-                        Join Challenge (Free)
-                      </Button>
-                    }
+                    challengeId={id}
+                    // Fix: Convert TeamData to the exact shape expected by JoinChallengeDialog
+                    // We ensure leader_id is a string (default to empty string if null)
+                    userTeam={userTeam ? { 
+                      id: userTeam.id, 
+                      name: userTeam.name, 
+                      leader_id: userTeam.leader_id || "" 
+                    } : null}
+                    userId={userId}
+                    registrationClosed={isRegistrationClosed}
                   />
                 )}
               </div>
@@ -399,6 +413,7 @@ export default async function ChallengePage({
                     
                     <div className="text-right">
                       <div className="font-bold text-lg">
+                        {/* Safe access to points assuming it exists on type now, fallback to 0 */}
                         {milestone.points || 0} <span className="text-sm font-normal text-muted-foreground">pts</span>
                       </div>
                       {milestone.due_date && (
@@ -415,18 +430,18 @@ export default async function ChallengePage({
                     {milestone.description}
                   </p>
 
-                  {/* Submission Logic */}
-                  {milestone.status === "in_progress" && (
+                  {/* Submission Logic - PROTECTED BY PARTICIPANT CHECK */}
+                  {milestone.status === "in_progress" && participant && (
                     <div className="mt-6 pt-6 border-t bg-slate-50 -mx-6 px-6 pb-2">
                       <h4 className="font-semibold mb-4 flex items-center gap-2">
                         <MessageSquare className="h-4 w-4" />
                         Submit Your Work
                       </h4>
-                      {/* FIX: participant is guaranteed not null here due to early return */}
                       <SubmissionForm
                         milestoneId={milestone.id}
-                        participantId={participant!.id} 
-                        teamId={userTeam?.id}
+                        participantId={participant.id} 
+                        // Fix: Convert null to undefined for SubmissionForm prop type compatibility
+                        teamId={userTeam?.id || undefined}
                         isTeamLeader={userTeam?.leader_id === userId}
                       />
                     </div>
