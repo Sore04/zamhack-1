@@ -14,6 +14,8 @@ type Challenge = Database["public"]["Tables"]["challenges"]["Row"]
 type Participant = Database["public"]["Tables"]["challenge_participants"]["Row"]
 type Profile = Database["public"]["Tables"]["profiles"]["Row"]
 type Evaluation = Database["public"]["Tables"]["evaluations"]["Row"]
+type Rubric = Database["public"]["Tables"]["rubrics"]["Row"]
+type Score = Database["public"]["Tables"]["scores"]["Row"]
 
 interface SubmissionReviewData {
   submission: Submission
@@ -22,6 +24,8 @@ interface SubmissionReviewData {
   participant: Participant | null
   profile: Profile | null
   evaluation: Evaluation | null
+  rubrics: Rubric[]
+  scores: Score[]
 }
 
 async function getSubmissionReviewData(
@@ -129,12 +133,25 @@ async function getSubmissionReviewData(
     }
   }
 
+  // Fetch rubrics
+  const { data: rubrics } = await supabase
+    .from("rubrics")
+    .select("*")
+    .eq("challenge_id", challengeId)
+    .order("created_at")
+
   // Fetch existing evaluation (including drafts)
-  const { data: evaluation, error: evaluationError } = await supabase
+  const { data: evaluation } = await supabase
     .from("evaluations")
     .select("*")
     .eq("submission_id", submissionId)
     .maybeSingle()
+
+  // Fetch detailed scores
+  const { data: scores } = await supabase
+    .from("scores")
+    .select("*")
+    .eq("submission_id", submissionId)
 
   return {
     submission,
@@ -143,6 +160,8 @@ async function getSubmissionReviewData(
     participant,
     profile: profileData,
     evaluation: evaluation || null,
+    rubrics: rubrics || [],
+    scores: scores || [],
   }
 }
 
@@ -177,7 +196,7 @@ export default async function SubmissionReviewPage({
     )
   }
 
-  const { submission, milestone, profile, evaluation } = data
+  const { submission, milestone, profile, evaluation, rubrics, scores } = data
 
   const fullName = profile
     ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Unknown Student"
@@ -203,12 +222,12 @@ export default async function SubmissionReviewPage({
             <CardHeader>
               <div className="flex items-center gap-4">
                 {/* Avatar */}
-                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-xl font-semibold text-primary">
+                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-xl font-semibold text-primary overflow-hidden shrink-0">
                   {profile?.avatar_url ? (
                     <img
                       src={profile.avatar_url}
                       alt={fullName}
-                      className="h-full w-full rounded-full object-cover"
+                      className="h-full w-full object-cover"
                     />
                   ) : (
                     initials
@@ -318,16 +337,11 @@ export default async function SubmissionReviewPage({
           <GradingForm
             submissionId={submissionId}
             initialEvaluation={evaluation}
+            rubrics={rubrics}
+            existingScores={scores}
           />
         </div>
       </div>
     </div>
   )
 }
-
-
-
-
-
-
-
