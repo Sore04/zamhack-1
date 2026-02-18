@@ -1,10 +1,13 @@
 import { createClient } from "@/utils/supabase/server"
 import { ChallengeCard } from "@/components/challenge-card"
 import { ChallengeFilters } from "@/components/challenge-filters"
-import { Database } from "@/types/supabase"
 import { redirect } from "next/navigation"
+import { Database } from "@/types/supabase"
 
-type Challenge = Database["public"]["Tables"]["challenges"]["Row"]
+// Define the exact return type we need
+type ChallengeWithOrg = Database["public"]["Tables"]["challenges"]["Row"] & {
+  organization: { name: string } | null
+}
 
 interface ChallengesPageProps {
   searchParams: Promise<{
@@ -18,44 +21,40 @@ async function getChallenges(searchParams: {
   q?: string
   difficulty?: string
   status?: string
-}): Promise<Challenge[]> {
+}): Promise<ChallengeWithOrg[]> {
   const supabase = await createClient()
 
-  // Authenticate
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) {
     redirect("/login")
   }
 
-  // Build query
+  // UPDATED QUERY: Select organization name relation
   let query = supabase
     .from("challenges")
-    .select("*")
+    .select("*, organization:organizations(name)")
 
   // 1. Search Filter
   if (searchParams.q) {
     const term = searchParams.q.trim()
     if (term) {
-      // Use 'ilike' for case-insensitive search
       query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%`)
     }
   }
 
   // 2. Difficulty Filter
   if (searchParams.difficulty) {
-    // Cast to 'any' to bypass strict Enum checking for URL params
     query = query.eq("difficulty", searchParams.difficulty as any)
   }
 
-  // 3. Status Filter (Default to active if not specified)
+  // 3. Status Filter
   if (searchParams.status) {
     query = query.eq("status", searchParams.status as any)
   } else {
-    // By default, show approved (Open) and in_progress challenges
-    query = query.in("status", ["approved", "in_progress"])
+    // Show open, in_progress, AND closed challenges (so students can see results)
+    query = query.in("status", ["approved", "in_progress", "closed", "completed"])
   }
 
-  // Order results
   query = query.order("created_at", { ascending: false })
 
   const { data, error } = await query
@@ -65,17 +64,16 @@ async function getChallenges(searchParams: {
     return []
   }
 
-  return (data as Challenge[]) || []
+  // Cast safely because we know the query shape matches
+  return (data as unknown as ChallengeWithOrg[]) || []
 }
 
 export default async function ChallengesPage({ searchParams }: ChallengesPageProps) {
-  // Await params for Next.js 15
   const params = await searchParams
   const challenges = await getChallenges(params)
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Browse Challenges</h1>
         <p className="text-muted-foreground">
@@ -83,10 +81,8 @@ export default async function ChallengesPage({ searchParams }: ChallengesPagePro
         </p>
       </div>
 
-      {/* Filters */}
       <ChallengeFilters />
 
-      {/* Grid */}
       {challenges.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-card p-12 text-center text-muted-foreground">
           <p className="text-lg font-medium">No challenges found</p>
