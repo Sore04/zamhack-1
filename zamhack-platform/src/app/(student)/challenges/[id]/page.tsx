@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { SubmissionForm } from "@/components/submission-form"
 import { JoinButton } from "@/components/join-button" // Updated import
-import { AlertCircle, CheckCircle2, Lock, MessageSquare, CreditCard, Clock } from "lucide-react"
+import { AlertCircle, CheckCircle2, Lock, MessageSquare, CreditCard, Clock, Trophy } from "lucide-react" // Added Trophy
 import Link from "next/link"
 
 // --- Types ---
@@ -181,6 +181,9 @@ export default async function ChallengePage({
   const startDate = challenge.start_date
   const endDate = challenge.end_date
 
+  // NEW: Check if challenge is officially ended
+  const isEnded = challenge.status === 'closed' || challenge.status === 'completed'
+
   // Payment Variables
   const hasEntryFee = (challenge.entry_fee_amount || 0) > 0
   const feeAmount = challenge.entry_fee_amount
@@ -304,7 +307,15 @@ export default async function ChallengePage({
 
               {/* ACTION BUTTONS */}
               <div className="space-y-4">
-                {hasJoined ? (
+                {/* 1. If Ended -> SHOW RESULTS LINK */}
+                {isEnded ? (
+                  <Button asChild className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold">
+                    <Link href={`/challenges/${challenge.id}/results`}>
+                      <Trophy className="mr-2 h-4 w-4" />
+                      View Official Results
+                    </Link>
+                  </Button>
+                ) : hasJoined ? (
                   <Button
                     disabled
                     className="w-full bg-green-600/20 text-green-600 hover:bg-green-600/20 font-semibold"
@@ -417,8 +428,10 @@ export default async function ChallengePage({
                       <SubmissionForm
                         milestoneId={milestone.id}
                         participantId={participant.id} 
+                        // Fix: Convert null to undefined for SubmissionForm prop type compatibility
                         teamId={userTeam?.id || undefined}
                         isTeamLeader={userTeam?.leader_id === userId}
+                        // Added requirement props from database
                         requiresGithub={milestone.requires_github}
                         requiresUrl={milestone.requires_url}
                         requiresText={milestone.requires_text}
