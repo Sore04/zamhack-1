@@ -6,12 +6,17 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Database } from "@/types/supabase"
 
-// Define the type to match ChallengeCard (must include organization)
 type ChallengeWithOrg = Database["public"]["Tables"]["challenges"]["Row"] & {
   organization: {
     name: string
   } | null
 }
+
+// Challenge statuses that mean the challenge is still ongoing
+const ACTIVE_CHALLENGE_STATUSES = ["approved", "in_progress", "under_review"]
+
+// Challenge statuses that mean the challenge is over
+const PAST_CHALLENGE_STATUSES = ["closed", "completed", "cancelled"]
 
 export default async function MyChallengesPage() {
   const supabase = await createClient()
@@ -21,36 +26,56 @@ export default async function MyChallengesPage() {
     redirect("/login")
   }
 
-  // Fetch participations with nested challenge AND organization data
-  const { data: participations, error } = await supabase
+  // Step 1: Fetch the student's participation records to get challenge IDs
+  const { data: participations, error: participationError } = await supabase
     .from("challenge_participants")
-    .select(`
-      id,
-      status,
-      challenge:challenges (
-        *,
-        organization:organizations (
-          name
-        )
-      )
-    `)
+    .select("id, status, challenge_id")
     .eq("user_id", user.id)
     .order("joined_at", { ascending: false })
 
-  if (error) {
-    console.error("Error fetching my challenges:", error)
+  if (participationError) {
+    console.error("Error fetching participations:", participationError)
   }
 
   const allParticipations = participations || []
+  const challengeIds = allParticipations.map((p) => p.challenge_id).filter(Boolean)
 
-  // Filter and flatten the data
-  const activeChallenges = allParticipations
-    .filter((p) => p.status === "active" && p.challenge)
-    .map((p) => p.challenge as unknown as ChallengeWithOrg)
+  // Step 2: Fetch the actual challenges separately (bypasses RLS nested join issue)
+  // This query runs as the student but directly on challenges table,
+  // so the RLS policy for closed/completed challenges must allow it.
+  let challenges: ChallengeWithOrg[] = []
 
-  const pastChallenges = allParticipations
-    .filter((p) => p.status !== "active" && p.challenge)
-    .map((p) => p.challenge as unknown as ChallengeWithOrg)
+  if (challengeIds.length > 0) {
+    const { data: challengeData, error: challengeError } = await supabase
+      .from("challenges")
+      .select("*, organization:organizations(name)")
+      .in("id", challengeIds as string[])
+
+    if (challengeError) {
+      console.error("Error fetching challenges:", challengeError)
+    } else {
+      challenges = (challengeData as unknown as ChallengeWithOrg[]) || []
+    }
+  }
+
+  // Step 3: Build a map for quick lookup
+  const challengeMap = new Map(challenges.map((c) => [c.id, c]))
+
+  // Step 4: Split into Active vs Past based on the CHALLENGE's status,
+  // not the participant's status row
+  const activeChallenges: ChallengeWithOrg[] = []
+  const pastChallenges: ChallengeWithOrg[] = []
+
+  for (const participation of allParticipations) {
+    const challenge = challengeMap.get(participation.challenge_id as string)
+    if (!challenge) continue // RLS blocked it or it was deleted
+
+    if (PAST_CHALLENGE_STATUSES.includes(challenge.status as string)) {
+      pastChallenges.push(challenge)
+    } else {
+      activeChallenges.push(challenge)
+    }
+  }
 
   const hasAnyChallenges = activeChallenges.length > 0 || pastChallenges.length > 0
 
@@ -97,11 +122,7 @@ export default async function MyChallengesPage() {
             ) : (
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {activeChallenges.map((challenge) => (
-                  <ChallengeCard 
-                    key={challenge.id} 
-                    challenge={challenge} 
-                    // REMOVED: href prop (handled internally by component)
-                  />
+                  <ChallengeCard key={challenge.id} challenge={challenge} />
                 ))}
               </div>
             )}
@@ -118,11 +139,7 @@ export default async function MyChallengesPage() {
             ) : (
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {pastChallenges.map((challenge) => (
-                  <ChallengeCard 
-                    key={challenge.id} 
-                    challenge={challenge}
-                    // REMOVED: href prop
-                  />
+                  <ChallengeCard key={challenge.id} challenge={challenge} />
                 ))}
               </div>
             )}
