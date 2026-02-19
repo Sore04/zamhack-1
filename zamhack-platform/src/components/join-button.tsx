@@ -32,7 +32,8 @@ export function JoinButton({ challengeId, isFull = false }: JoinButtonProps) {
     setOverlapWarning(null) // Reset dialog state if retrying
 
     try {
-      const result = await joinChallenge(challengeId, force)
+      // FIX: Pass undefined for teamId so force becomes the third parameter
+      const result = await joinChallenge(challengeId, undefined, force)
 
       if (result.error) {
         toast.error(result.error)
