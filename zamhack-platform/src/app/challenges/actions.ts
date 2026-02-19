@@ -4,7 +4,8 @@ import { createClient } from "@/utils/supabase/server"
 import { revalidatePath } from "next/cache"
 
 // --- EXISTING JOIN LOGIC ---
-export async function joinChallenge(challengeId: string, forceJoin: boolean = false) {
+// FIX: Updated signature to accept teamId as the second parameter
+export async function joinChallenge(challengeId: string, teamId?: string, forceJoin: boolean = false) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -105,6 +106,7 @@ export async function joinChallenge(challengeId: string, forceJoin: boolean = fa
     .insert({
       challenge_id: challengeId,
       user_id: user.id,
+      team_id: teamId || null, // FIX: Map the passed teamId here
       status: 'active',
       joined_at: new Date().toISOString()
     })

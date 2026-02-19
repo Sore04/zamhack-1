@@ -188,15 +188,3 @@ export const JoinChallengeDialog = ({
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
