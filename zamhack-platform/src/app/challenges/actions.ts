@@ -247,7 +247,9 @@ export async function closeChallenge(challengeId: string) {
   if (updateError) return { error: "Failed to close challenge." }
 
   // 8. Revalidate Paths
-  revalidatePath(`/challenges/${challengeId}`)
-  revalidatePath(`/company/challenges/${challengeId}`)
-  return { success: true }
+revalidatePath(`/challenges/${challengeId}`)
+revalidatePath(`/company/challenges/${challengeId}`)
+revalidatePath(`/dashboard`)           // student dashboard
+revalidatePath(`/challenges`)           // student challenge list
+revalidatePath(`/challenges/${challengeId}/results`) // results page
 }
