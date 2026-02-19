@@ -12,10 +12,6 @@ type ChallengeWithOrg = Database["public"]["Tables"]["challenges"]["Row"] & {
   } | null
 }
 
-// Challenge statuses that mean the challenge is still ongoing
-const ACTIVE_CHALLENGE_STATUSES = ["approved", "in_progress", "under_review"]
-
-// Challenge statuses that mean the challenge is over
 const PAST_CHALLENGE_STATUSES = ["closed", "completed", "cancelled"]
 
 export default async function MyChallengesPage() {
@@ -26,7 +22,7 @@ export default async function MyChallengesPage() {
     redirect("/login")
   }
 
-  // Step 1: Fetch the student's participation records to get challenge IDs
+  // Step 1: Fetch participation records to get challenge IDs
   const { data: participations, error: participationError } = await supabase
     .from("challenge_participants")
     .select("id, status, challenge_id")
@@ -38,18 +34,18 @@ export default async function MyChallengesPage() {
   }
 
   const allParticipations = participations || []
-  const challengeIds = allParticipations.map((p) => p.challenge_id).filter(Boolean)
+  const challengeIds = allParticipations
+    .map((p) => p.challenge_id)
+    .filter(Boolean) as string[]
 
-  // Step 2: Fetch the actual challenges separately (bypasses RLS nested join issue)
-  // This query runs as the student but directly on challenges table,
-  // so the RLS policy for closed/completed challenges must allow it.
+  // Step 2: Fetch challenges directly by ID (avoids RLS nested join issue)
   let challenges: ChallengeWithOrg[] = []
 
   if (challengeIds.length > 0) {
     const { data: challengeData, error: challengeError } = await supabase
       .from("challenges")
       .select("*, organization:organizations(name)")
-      .in("id", challengeIds as string[])
+      .in("id", challengeIds)
 
     if (challengeError) {
       console.error("Error fetching challenges:", challengeError)
@@ -58,17 +54,16 @@ export default async function MyChallengesPage() {
     }
   }
 
-  // Step 3: Build a map for quick lookup
+  // Step 3: Map challenges for quick lookup
   const challengeMap = new Map(challenges.map((c) => [c.id, c]))
 
-  // Step 4: Split into Active vs Past based on the CHALLENGE's status,
-  // not the participant's status row
+  // Step 4: Split into Active vs Past based on the CHALLENGE's status
   const activeChallenges: ChallengeWithOrg[] = []
   const pastChallenges: ChallengeWithOrg[] = []
 
   for (const participation of allParticipations) {
     const challenge = challengeMap.get(participation.challenge_id as string)
-    if (!challenge) continue // RLS blocked it or it was deleted
+    if (!challenge) continue
 
     if (PAST_CHALLENGE_STATUSES.includes(challenge.status as string)) {
       pastChallenges.push(challenge)
