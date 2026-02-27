@@ -1,7 +1,7 @@
 import { createClient } from "@/utils/supabase/server"
 import { redirect } from "next/navigation"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, Building2, FileText, Trophy } from "lucide-react"
+import "@/app/(admin)/admin.css"
 
 export default async function AdminAnalyticsPage() {
   const supabase = await createClient()
@@ -9,7 +9,6 @@ export default async function AdminAnalyticsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
-  // Check Admin Role
   const { data: currentUserProfile } = await supabase
     .from("profiles")
     .select("role")
@@ -18,7 +17,6 @@ export default async function AdminAnalyticsPage() {
 
   if (currentUserProfile?.role !== "admin") redirect("/dashboard")
 
-  // Fetch metrics in parallel using 'count' option for efficiency
   const [students, companies, submissions, challenges] = await Promise.all([
     supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "student"),
     supabase.from("organizations").select("*", { count: "exact", head: true }),
@@ -32,55 +30,82 @@ export default async function AdminAnalyticsPage() {
       value: students.count || 0,
       icon: Users,
       description: "Registered student accounts",
+      variant: "coral" as const,
     },
     {
       title: "Total Companies",
       value: companies.count || 0,
       icon: Building2,
-      description: "Active organizations",
+      description: "Active organizations on the platform",
+      variant: "blue" as const,
     },
     {
       title: "Total Submissions",
       value: submissions.count || 0,
       icon: FileText,
       description: "Project submissions across all challenges",
+      variant: "green" as const,
     },
     {
       title: "Total Challenges",
       value: challenges.count || 0,
       icon: Trophy,
-      description: "Challenges created",
+      description: "Challenges created by companies",
+      variant: "yellow" as const,
     },
   ]
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-3xl font-bold">Analytics Overview</h1>
-        <p className="text-muted-foreground">Real-time metrics for the platform.</p>
+    <div className="space-y-6" data-layout="admin">
+
+      {/* Page Header */}
+      <div className="admin-page-header">
+        <h1 className="admin-page-title">
+          Analytics <span>Overview</span>
+        </h1>
+        <p className="admin-page-subtitle">Real-time metrics and insights for the ZamHack platform.</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Stats */}
+      <div className="admin-stats-grid">
         {stats.map((stat, index) => {
           const Icon = stat.icon
           return (
-            <Card key={index}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {stat.title}
-                </CardTitle>
-                <Icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-muted-foreground">
-                  {stat.description}
-                </p>
-              </CardContent>
-            </Card>
+            <div key={index} className={`admin-stat-card ${stat.variant}`}>
+              <div className="admin-stat-header">
+                <span className="admin-stat-label">{stat.title}</span>
+                <div className={`admin-stat-icon ${stat.variant}`}>
+                  <Icon />
+                </div>
+              </div>
+              <div className={`admin-stat-value ${stat.variant === "coral" ? "coral" : stat.variant === "blue" ? "blue" : ""}`}>
+                {stat.value.toLocaleString()}
+              </div>
+              <p className="admin-stat-description">{stat.description}</p>
+            </div>
           )
         })}
       </div>
+
+      {/* Placeholder for future charts */}
+      <div className="admin-card">
+        <div className="admin-card-header">
+          <div>
+            <div className="admin-card-title">Engagement Trends</div>
+            <div className="admin-card-subtitle">Charts and detailed analytics coming soon</div>
+          </div>
+        </div>
+        <div className="admin-empty" style={{ padding: "4rem 1.5rem" }}>
+          <div className="admin-empty-icon">
+            <Trophy className="w-6 h-6" />
+          </div>
+          <div className="admin-empty-title">Advanced Analytics</div>
+          <div className="admin-empty-text">
+            User growth charts, challenge metrics, and engagement reports will appear here.
+          </div>
+        </div>
+      </div>
+
     </div>
   )
 }

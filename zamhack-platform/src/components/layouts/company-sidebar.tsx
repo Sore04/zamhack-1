@@ -1,3 +1,4 @@
+// src/components/layouts/company-sidebar.tsx
 "use client"
 
 import Link from "next/link"
@@ -9,49 +10,58 @@ import {
   Building2,
   HelpCircle,
   Settings,
+  Zap,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LogoutButton } from "@/components/logout-button"
 
 const companyNavItems = [
-  { href: "/company/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/company/challenges", label: "Challenges", icon: Briefcase },
-  { href: "/company/talent", label: "Talent Search", icon: Search },
-  { href: "/company/organization", label: "Org Settings", icon: Building2 },
-  { href: "/company/support", label: "Admin Support", icon: HelpCircle },
-  { href: "/company/settings", label: "Settings", icon: Settings },
+  { href: "/company/dashboard",    label: "Dashboard",     icon: LayoutDashboard },
+  { href: "/company/challenges",   label: "Challenges",    icon: Briefcase },
+  { href: "/company/talent",       label: "Talent Search", icon: Search },
+  { href: "/company/organization", label: "Org Settings",  icon: Building2 },
+  { href: "/company/support",      label: "Admin Support", icon: HelpCircle },
+  { href: "/company/settings",     label: "Settings",      icon: Settings },
 ]
 
 export const CompanySidebar = () => {
   const pathname = usePathname()
 
   return (
-    <div className="flex h-full flex-col border-r bg-sidebar">
-      <div className="flex h-16 items-center border-b bg-primary/10 px-6">
-        <h2 className="text-lg font-semibold">Company Portal</h2>
+    <div className="flex h-full flex-col bg-white border-r border-[var(--cp-border,rgba(44,62,80,0.10))]">
+
+      {/* Branding Header */}
+      <div className="company-sidebar-header flex h-16 items-center gap-2.5 px-5">
+        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/20">
+          <Zap className="w-4 h-4 text-white" />
+        </div>
+        <div>
+          <h2 className="text-sm font-bold text-white leading-tight">ZamHack</h2>
+          <p className="text-[0.65rem] text-white/60 font-medium">Company Portal</p>
+        </div>
       </div>
-      <nav className="flex-1 space-y-1 p-4">
+
+      {/* Navigation */}
+      <nav className="flex-1 space-y-0.5 p-3 overflow-y-auto">
         {companyNavItems.map((item) => {
           const Icon = item.icon
-          const isActive = pathname === item.href
+          const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
+              className={cn("company-nav-link", isActive && "active")}
             >
-              <Icon className="h-5 w-5" />
-              {item.label}
+              <Icon />
+              <span>{item.label}</span>
             </Link>
           )
         })}
       </nav>
-      <div className="border-t p-4">
+
+      {/* Footer / Logout */}
+      <div className="border-t border-[var(--cp-border,rgba(44,62,80,0.10))] p-3">
         <LogoutButton />
       </div>
     </div>

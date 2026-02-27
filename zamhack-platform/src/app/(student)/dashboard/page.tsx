@@ -4,11 +4,8 @@ import { ChallengeFilters } from "@/components/challenge-filters"
 import { Database } from "@/types/supabase"
 import { redirect } from "next/navigation"
 
-// Define the type to match what ChallengeCard expects (joined organization)
 type ChallengeWithOrg = Database["public"]["Tables"]["challenges"]["Row"] & {
-  organization: {
-    name: string
-  } | null
+  organization: { name: string } | null
 }
 
 interface ChallengesPageProps {
@@ -16,6 +13,10 @@ interface ChallengesPageProps {
     q?: string
     difficulty?: string
     status?: string
+    participation_type?: string
+    entry_type?: string
+    category?: string
+    sort?: string
   }>
 }
 
@@ -23,48 +24,72 @@ async function getChallenges(searchParams: {
   q?: string
   difficulty?: string
   status?: string
+  participation_type?: string
+  entry_type?: string
+  category?: string
+  sort?: string
 }): Promise<ChallengeWithOrg[]> {
   const supabase = await createClient()
 
-  // Authenticate
   const { data: { user }, error: userError } = await supabase.auth.getUser()
-  if (userError || !user) {
-    redirect("/login")
-  }
+  if (userError || !user) redirect("/login")
 
-  // Build query with organization join
   let query = supabase
     .from("challenges")
     .select("*, organization:organizations(name)")
 
-  // 1. Search Filter
-  if (searchParams.q) {
+  // 1. Search
+  if (searchParams.q?.trim()) {
     const term = searchParams.q.trim()
-    if (term) {
-      query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%`)
-    }
+    query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%`)
   }
 
-  // 2. Difficulty Filter
-  if (searchParams.difficulty) {
-    query = query.eq("difficulty", searchParams.difficulty as any)
+  // 2. Difficulty — cast to text for safe comparison against the enum
+  if (searchParams.difficulty && searchParams.difficulty !== "all") {
+    query = query.filter("difficulty::text", "eq", searchParams.difficulty)
   }
 
-  // 3. Status Filter (Default to active/completed/closed if not specified)
+  // 3. Status
   if (searchParams.status) {
     query = query.eq("status", searchParams.status as any)
   } else {
-    // Show open, in_progress, and closed challenges
     query = query.in("status", ["approved", "in_progress", "closed", "completed"])
   }
 
-  // Order results
-  query = query.order("created_at", { ascending: false })
+  // 4. Participation Type
+  // "solo"  → challenges that allow solo play (type = 'solo' OR 'both')
+  // "team"  → challenges that allow team play (type = 'team' OR 'both')
+  if (searchParams.participation_type === "solo") {
+    query = query.or("participation_type.eq.solo,participation_type.eq.both")
+  } else if (searchParams.participation_type === "team") {
+    query = query.or("participation_type.eq.team,participation_type.eq.both")
+  }
+
+  // 5. Entry Type
+  // "free" → entry_fee_amount IS NULL or 0
+  // "paid" → entry_fee_amount > 0 (and not null)
+  if (searchParams.entry_type === "free") {
+    query = query.or("entry_fee_amount.is.null,entry_fee_amount.eq.0")
+  } else if (searchParams.entry_type === "paid") {
+    query = query.gt("entry_fee_amount", 0)
+  }
+
+  // 6. Industry / Category
+  if (searchParams.category && searchParams.category !== "all") {
+    query = query.eq("industry", searchParams.category)
+  }
+
+  // 7. Sort
+  if (searchParams.sort === "closing_soon") {
+    query = query.order("end_date", { ascending: true })
+  } else {
+    query = query.order("created_at", { ascending: false })
+  }
 
   const { data, error } = await query
 
   if (error) {
-    console.error("Error fetching challenges:", error)
+    console.error("Error fetching challenges:", error.message, error.details)
     return []
   }
 
@@ -77,7 +102,6 @@ export default async function ChallengesPage({ searchParams }: ChallengesPagePro
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Browse Challenges</h1>
         <p className="text-muted-foreground">
@@ -85,10 +109,8 @@ export default async function ChallengesPage({ searchParams }: ChallengesPagePro
         </p>
       </div>
 
-      {/* Filters */}
       <ChallengeFilters />
 
-      {/* Grid */}
       {challenges.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-card p-12 text-center text-muted-foreground">
           <p className="text-lg font-medium">No challenges found</p>
@@ -97,11 +119,7 @@ export default async function ChallengesPage({ searchParams }: ChallengesPagePro
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {challenges.map((challenge) => (
-            <ChallengeCard 
-              key={challenge.id} 
-              challenge={challenge} 
-              // REMOVED: href={`/challenges/${challenge.id}`}  <-- The component handles this internally
-            />
+            <ChallengeCard key={challenge.id} challenge={challenge} />
           ))}
         </div>
       )}

@@ -12,11 +12,11 @@ export default async function CompanySupportPage() {
   if (!user) redirect("/login")
 
   return (
-    <div className="space-y-6 p-6 max-w-2xl">
+    <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-3xl font-bold">Admin Support</h1>
-        <p className="text-muted-foreground">
-          We are here to help you manage your challenges and organization.
+        <h1 className="cp-page-title">Admin Support</h1>
+        <p className="cp-page-subtitle">
+          Get help from the ZamHack team. We typically respond within 24 hours.
         </p>
       </div>
 

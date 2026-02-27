@@ -6,16 +6,12 @@ import { createClient } from "@/utils/supabase/server"
 export async function updateOrganization(orgId: string, formData: FormData) {
   const supabase = await createClient()
 
-  // Auth check
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) {
-    return { error: "Not authenticated" }
-  }
+  if (!user) return { error: "Not authenticated" }
 
-  // Verify permission: Ensure user belongs to this org
   const { data: profile } = await supabase
     .from("profiles")
     .select("organization_id, role")
@@ -34,26 +30,24 @@ export async function updateOrganization(orgId: string, formData: FormData) {
   const industry = formData.get("industry") as string
   const description = formData.get("description") as string
   const website = formData.get("website") as string
+  const logo_url = formData.get("logo_url") as string
 
-  if (!name) {
-    return { error: "Company name is required" }
-  }
+  if (!name) return { error: "Company name is required" }
 
   const { error } = await supabase
     .from("organizations")
     .update({
       name,
-      industry,
-      description,
-      website,
+      industry: industry || null,
+      description: description || null,
+      website: website || null,
+      logo_url: logo_url || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", orgId)
 
-  if (error) {
-    return { error: error.message }
-  }
+  if (error) return { error: error.message }
 
   revalidatePath("/company/organization")
-  return { success: "Organization updated successfully" }
+  return { success: "Organization updated successfully!" }
 }

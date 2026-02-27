@@ -8,9 +8,13 @@ import {
   Briefcase,
   BarChart3,
   Settings,
+  Shield,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LogoutButton } from "@/components/logout-button"
+
+// Import the dedicated admin CSS
+import "@/app/(admin)/admin.css"
 
 const adminNavItems = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -24,11 +28,21 @@ export const AdminSidebar = () => {
   const pathname = usePathname()
 
   return (
-    <div className="flex h-full flex-col border-r bg-sidebar">
-      <div className="flex h-16 items-center border-b bg-destructive/10 px-6">
-        <h2 className="text-lg font-semibold text-destructive">Admin Portal</h2>
+    <div className="admin-sidebar">
+      {/* Brand Header */}
+      <div className="admin-sidebar-brand">
+        <div className="admin-sidebar-brand-icon">
+          <Shield />
+        </div>
+        <div className="admin-sidebar-brand-text">
+          <span className="admin-sidebar-brand-title">ZamHack</span>
+          <span className="admin-sidebar-brand-subtitle">Admin Portal</span>
+        </div>
       </div>
-      <nav className="flex-1 space-y-1 p-4">
+
+      {/* Navigation */}
+      <nav className="admin-sidebar-nav">
+        <span className="admin-nav-section-label">Management</span>
         {adminNavItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
@@ -36,39 +50,19 @@ export const AdminSidebar = () => {
             <Link
               key={item.href}
               href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
+              className={cn("admin-nav-link", isActive && "active")}
             >
-              <Icon className="h-5 w-5" />
+              <Icon />
               {item.label}
             </Link>
           )
         })}
       </nav>
-      <div className="border-t p-4">
+
+      {/* Footer */}
+      <div className="admin-sidebar-footer">
         <LogoutButton />
       </div>
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

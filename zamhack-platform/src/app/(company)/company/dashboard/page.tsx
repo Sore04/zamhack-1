@@ -1,10 +1,17 @@
 import { createClient } from "@/utils/supabase/server"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Database } from "@/types/supabase"
 import { redirect } from "next/navigation"
 import Link from "next/link"
+import {
+  Briefcase,
+  Users,
+  Clock,
+  FileText,
+  ArrowRight,
+  MessageCircle,
+  CalendarDays,
+} from "lucide-react"
 
 type Challenge = Database["public"]["Tables"]["challenges"]["Row"]
 
@@ -66,32 +73,27 @@ async function getCompanyDashboardData(): Promise<DashboardData> {
   }
 
   // --- SELF-REPAIR LOGIC START ---
-  // If the user has no organization_id, try to create/link one based on signup metadata
   if (!profile.organization_id && profile.role === "company_admin") {
-    // Fallback to "My Company" if metadata is missing to prevent crash
     const companyName = user.user_metadata?.company_name || "My Company"
-    
+
     console.log(`[Auto-Fix] Attempting to create organization '${companyName}' for user: ${user.id}`)
-    
-    // 1. Try to create the organization
+
     const { data: newOrg, error: createOrgError } = await supabase
       .from("organizations")
       .insert({ name: companyName })
       .select("id")
       .single()
-    
+
     if (newOrg && !createOrgError) {
       console.log(`[Auto-Fix] Organization created: ${newOrg.id}. Linking to profile...`)
-      
-      // 2. Link profile to the new organization
+
       const { error: linkError } = await supabase
         .from("profiles")
         .update({ organization_id: newOrg.id })
         .eq("id", user.id)
-      
+
       if (!linkError) {
         console.log(`[Auto-Fix] Success! Profile linked.`)
-        // Success! Update local variable so the rest of the page loads
         profile.organization_id = newOrg.id
       } else {
         console.error("[Auto-Fix] Failed to link profile:", JSON.stringify(linkError, null, 2))
@@ -116,7 +118,7 @@ async function getCompanyDashboardData(): Promise<DashboardData> {
     throw new Error("Organization not found in database")
   }
 
-  // Active Challenges (Updated to include Drafts/Pending)
+  // Active Challenges
   const { data: activeChallenges } = await supabase
     .from("challenges")
     .select("*")
@@ -194,22 +196,18 @@ async function getCompanyDashboardData(): Promise<DashboardData> {
         .limit(5)
 
       if (submissions && submissions.length > 0) {
-        // Fetch related data
         const milestoneIds = submissions
           .map((s) => s.milestone_id)
           .filter(Boolean) as string[]
-        
+
         const challengeIdsFromSubs = submissions
-          .map((s) => s.participant_id ? participantMap.get(s.participant_id) : null)
+          .map((s) => (s.participant_id ? participantMap.get(s.participant_id) : null))
           .filter(Boolean) as string[]
-        
+
         const profileIds = participants
           .map((p) => p.id)
-          .filter((id) =>
-            submissions.some((s) => s.participant_id === id)
-          ) as string[]
+          .filter((id) => submissions.some((s) => s.participant_id === id)) as string[]
 
-        // Batch fetches
         const { data: milestones } = milestoneIds.length
           ? await supabase.from("milestones").select("id, title").in("id", milestoneIds)
           : { data: null }
@@ -230,13 +228,11 @@ async function getCompanyDashboardData(): Promise<DashboardData> {
           ? await supabase.from("profiles").select("id, first_name, last_name, avatar_url").in("id", userIds)
           : { data: null }
 
-        // Maps
         const milestoneMap = new Map((milestones || []).map((m) => [m.id, m]))
         const challengeMap = new Map((challenges || []).map((c) => [c.id, c]))
         const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
         const participantToUserIdMap = new Map((participantData || []).map((p) => [p.id, p.user_id]))
 
-        // Build result
         recentSubmissions = submissions.map((sub) => {
           const userId = sub.participant_id ? participantToUserIdMap.get(sub.participant_id) : null
           const profile = userId ? profileMap.get(userId) : null
@@ -276,6 +272,40 @@ async function getCompanyDashboardData(): Promise<DashboardData> {
   }
 }
 
+// ── Helpers ────────────────────────────────────────────────────────
+function getStatusClass(status: string | null): string {
+  switch (status) {
+    case "approved":         return "active"
+    case "in_progress":      return "in-progress"
+    case "under_review":     return "under-review"
+    case "draft":            return "draft"
+    case "pending_approval": return "pending"
+    default:                 return "draft"
+  }
+}
+
+function getStatusLabel(status: string | null): string {
+  switch (status) {
+    case "approved":         return "Active"
+    case "in_progress":      return "In Progress"
+    case "under_review":     return "Under Review"
+    case "draft":            return "Draft"
+    case "pending_approval": return "Pending"
+    default:                 return status ?? "Unknown"
+  }
+}
+
+function getProgressWidth(status: string | null): string {
+  switch (status) {
+    case "completed":    return "100%"
+    case "under_review": return "80%"
+    case "in_progress":  return "60%"
+    case "approved":     return "30%"
+    default:             return "10%"
+  }
+}
+
+// ── Page ───────────────────────────────────────────────────────────
 export default async function CompanyDashboardPage() {
   const {
     organizationName,
@@ -286,156 +316,261 @@ export default async function CompanyDashboardPage() {
     recentSubmissions,
   } = await getCompanyDashboardData()
 
-  // Helper for formatting date
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "N/A"
-    return new Date(dateString).toLocaleDateString()
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
   }
 
-  // Helper for student name
   const getStudentName = (submission: RecentSubmission) => {
     if (submission.participant?.profile) {
       const { first_name, last_name } = submission.participant.profile
-      const name = `${first_name || ""} ${last_name || ""}`.trim()
-      return name || "Unknown Student"
+      return `${first_name || ""} ${last_name || ""}`.trim() || "Unknown Student"
     }
     return "Unknown Student"
   }
 
-  const getStatusBadgeVariant = (status: string | null) => {
-    switch (status) {
-      case "approved": return "success"
-      case "in_progress": return "default"
-      case "under_review": return "warning"
-      case "draft": return "outline"
-      case "pending_approval": return "warning"
-      default: return "outline"
-    }
-  }
-
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold">Welcome, {organizationName}!</h1>
-          <p className="text-muted-foreground">
-            Here is what's happening with your challenges.
-          </p>
+
+      {/* ── Welcome Banner ── */}
+      <div className="cp-welcome-banner">
+        <p className="cp-welcome-title">Welcome back, {organizationName}! 👋</p>
+        <p className="cp-welcome-subtitle">
+          Here&apos;s a snapshot of your challenges and recent activity.
+        </p>
+      </div>
+
+      {/* ── Stat Cards ── */}
+      <div className="cp-grid-4">
+        <div className="cp-stat-card">
+          <div className="cp-stat-icon">
+            <Briefcase className="w-5 h-5" />
+          </div>
+          <p className="cp-stat-value">{activeChallengesCount}</p>
+          <p className="cp-stat-label">Active Challenges</p>
         </div>
-        <Link href="/company/challenges/create">
-          <Button>Create New Challenge</Button>
-        </Link>
+
+        <div className="cp-stat-card">
+          <div className="cp-stat-icon">
+            <Users className="w-5 h-5" />
+          </div>
+          <p className="cp-stat-value">{totalParticipants}</p>
+          <p className="cp-stat-label">Total Participants</p>
+        </div>
+
+        <div className="cp-stat-card primary">
+          <div className="cp-stat-icon">
+            <Clock className="w-5 h-5" />
+          </div>
+          <p className="cp-stat-value">{pendingReviews}</p>
+          <p className="cp-stat-label">Pending Reviews</p>
+        </div>
+
+        <div className="cp-stat-card navy">
+          <div className="cp-stat-icon">
+            <FileText className="w-5 h-5" />
+          </div>
+          <p className="cp-stat-value">{recentSubmissions.length}</p>
+          <p className="cp-stat-label">New Submissions</p>
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Challenges</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeChallengesCount}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Participants</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalParticipants}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Reviews</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{pendingReviews}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Recent Submissions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{recentSubmissions.length}</div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* ── Middle Row: Submissions table + Quick Actions ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: "1rem", alignItems: "start" }}>
 
-      {/* Recent Submissions */}
-      <div className="space-y-4">
-        <h2 className="text-2xl font-semibold">Recent Submissions</h2>
-        {recentSubmissions.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <p>No submissions yet.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="rounded-md border bg-card">
-            <div className="relative w-full overflow-auto">
-              <table className="w-full caption-bottom text-sm">
-                <thead className="[&_tr]:border-b">
-                  <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Student</th>
-                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Challenge</th>
-                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Milestone</th>
-                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Date</th>
-                    <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Action</th>
+        {/* Recent Submissions */}
+        <div className="cp-card">
+          <div className="cp-card-header">
+            <h2 className="cp-card-title">Recent Submissions</h2>
+            <Link href="/company/challenges" className="cp-btn cp-btn-ghost cp-btn-sm">
+              View all <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          {recentSubmissions.length === 0 ? (
+            <div className="cp-empty-state">
+              <div className="cp-empty-icon">
+                <FileText className="w-7 h-7" />
+              </div>
+              <p className="cp-empty-title">No submissions yet</p>
+              <p className="cp-empty-desc">
+                Once students submit to your challenges, they&apos;ll appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="cp-table-wrapper" style={{ border: "none", borderRadius: 0 }}>
+              <table className="cp-table">
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>Challenge</th>
+                    <th>Milestone</th>
+                    <th>Date</th>
+                    <th style={{ textAlign: "right" }}>Action</th>
                   </tr>
                 </thead>
-                <tbody className="[&_tr:last-child]:border-0">
+                <tbody>
                   {recentSubmissions.map((submission) => (
-                    <tr key={submission.id} className="border-b transition-colors hover:bg-muted/50">
-                      <td className="p-4 align-middle font-medium">{getStudentName(submission)}</td>
-                      <td className="p-4 align-middle">{submission.challenge?.title}</td>
-                      <td className="p-4 align-middle">{submission.milestone?.title}</td>
-                      <td className="p-4 align-middle">{formatDate(submission.submitted_at)}</td>
-                      <td className="p-4 align-middle text-right">
-                        <Button size="sm" variant="outline" asChild>
-                          <Link href={`/company/challenges/${submission.challenge?.id}/submissions/${submission.id}`}>
-                            Review
-                          </Link>
-                        </Button>
+                    <tr key={submission.id}>
+                      <td>{getStudentName(submission)}</td>
+                      <td style={{ color: "var(--cp-text-secondary)", fontWeight: 500 }}>
+                        {submission.challenge?.title}
+                      </td>
+                      <td style={{ color: "var(--cp-text-muted)", fontWeight: 400 }}>
+                        {submission.milestone?.title}
+                      </td>
+                      <td>
+                        <span style={{ display: "flex", alignItems: "center", gap: "0.375rem", color: "var(--cp-text-muted)", fontSize: "0.8125rem" }}>
+                          <CalendarDays style={{ width: "0.875rem", height: "0.875rem", color: "var(--cp-coral)" }} />
+                          {formatDate(submission.submitted_at)}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <Link
+                          href={`/company/challenges/${submission.challenge?.id}/submissions/${submission.id}`}
+                          className="cp-btn cp-btn-outline cp-btn-sm"
+                        >
+                          Review
+                        </Link>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+
+        {/* Right column: Support + Quick Actions */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div className="cp-support-card">
+            <p className="cp-support-card-title">Need Help?</p>
+            <p className="cp-support-card-desc">
+              Our admin team is ready to assist with any challenges or questions.
+            </p>
+            <Link href="/company/support" className="cp-support-btn">
+              <MessageCircle style={{ width: "0.875rem", height: "0.875rem" }} />
+              Contact Support
+            </Link>
           </div>
-        )}
+
+          <div className="cp-card">
+            <div className="cp-card-body">
+              <p className="cp-card-title" style={{ marginBottom: "0.75rem" }}>Quick Actions</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <Link
+                  href="/company/challenges/create"
+                  className="cp-btn cp-btn-primary"
+                  style={{ width: "100%", justifyContent: "center" }}
+                >
+                  <Briefcase style={{ width: "1rem", height: "1rem" }} />
+                  Create Challenge
+                </Link>
+                <Link
+                  href="/company/talent"
+                  className="cp-btn cp-btn-ghost"
+                  style={{ width: "100%", justifyContent: "center" }}
+                >
+                  <Users style={{ width: "1rem", height: "1rem" }} />
+                  Search Talent
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Active Challenges List */}
-      <div className="space-y-4">
-        <h2 className="text-2xl font-semibold">Active Challenges</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {activeChallenges.map((challenge) => (
-            <Card key={challenge.id}>
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <CardTitle className="text-lg line-clamp-1" title={challenge.title}>
-                    {challenge.title}
-                  </CardTitle>
-                  <Badge variant={getStatusBadgeVariant(challenge.status) as any}>
-                    {challenge.status?.replace("_", " ")}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                  {challenge.description}
-                </p>
-                <Button variant="outline" size="sm" className="w-full" asChild>
-                  <Link href={`/company/challenges/${challenge.id}`}>Manage Challenge</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+      {/* ── Active Challenges Grid ── */}
+      <div className="cp-card">
+        <div className="cp-card-header">
+          <h2 className="cp-card-title">Active Challenges</h2>
+          <Link href="/company/challenges" className="cp-btn cp-btn-ghost cp-btn-sm">
+            Manage all <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
+
+        {activeChallenges.length === 0 ? (
+          <div className="cp-empty-state">
+            <div className="cp-empty-icon">
+              <Briefcase className="w-7 h-7" />
+            </div>
+            <p className="cp-empty-title">No challenges yet</p>
+            <p className="cp-empty-desc">
+              Create your first challenge to start finding great talent.
+            </p>
+            <Link href="/company/challenges/create" className="cp-btn cp-btn-primary">
+              Create Challenge
+            </Link>
+          </div>
+        ) : (
+          <div className="cp-card-body">
+            <div className="cp-grid-3">
+              {activeChallenges.slice(0, 6).map((challenge) => (
+                <div key={challenge.id} className="cp-challenge-card">
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.5rem" }}>
+                    <p className="cp-challenge-title" title={challenge.title}>
+                      {challenge.title}
+                    </p>
+                    <span className={`cp-badge ${getStatusClass(challenge.status)}`}>
+                      <span className="cp-badge-dot" />
+                      {getStatusLabel(challenge.status)}
+                    </span>
+                  </div>
+
+                  {challenge.description && (
+                    <p style={{
+                      fontSize: "0.8125rem",
+                      color: "var(--cp-text-muted)",
+                      marginTop: "0.5rem",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical" as const,
+                      overflow: "hidden",
+                    }}>
+                      {challenge.description}
+                    </p>
+                  )}
+
+                  <div className="cp-challenge-meta">
+                    {challenge.difficulty && (
+                      <span className="cp-challenge-meta-item">
+                        <span style={{ color: "var(--cp-coral)", fontSize: "0.6rem" }}>●</span>
+                        {challenge.difficulty}
+                      </span>
+                    )}
+                    {challenge.end_date && (
+                      <span className="cp-challenge-meta-item">
+                        <CalendarDays style={{ width: "0.875rem", height: "0.875rem", color: "var(--cp-coral)" }} />
+                        Ends {formatDate(challenge.end_date)}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="cp-progress-bar">
+                    <div
+                      className="cp-progress-fill"
+                      style={{ width: getProgressWidth(challenge.status) }}
+                    />
+                  </div>
+
+                  <div style={{ marginTop: "1rem" }}>
+                    <Link
+                      href={`/company/challenges/${challenge.id}`}
+                      className="cp-btn cp-btn-ghost cp-btn-sm"
+                      style={{ width: "100%", justifyContent: "center" }}
+                    >
+                      Manage Challenge
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

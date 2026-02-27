@@ -9,28 +9,35 @@ import {
   Users,
   User,
   Settings,
+  Zap,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
 import { LogoutButton } from "@/components/logout-button"
 
 const studentNavItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/challenges", label: "Browse Challenges", icon: Search },
-  { href: "/my-challenges", label: "My Challenges", icon: Briefcase },
-  { href: "/team", label: "My Team", icon: Users },
-  { href: "/profile", label: "Profile", icon: User },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard",     label: "Dashboard",        icon: LayoutDashboard },
+  { href: "/challenges",    label: "Browse Challenges", icon: Search },
+  { href: "/my-challenges", label: "My Challenges",     icon: Briefcase },
+  { href: "/team",          label: "My Team",           icon: Users },
+  { href: "/profile",       label: "Profile",           icon: User },
+  { href: "/settings",      label: "Settings",          icon: Settings },
 ]
 
 export const StudentSidebar = () => {
   const pathname = usePathname()
 
   return (
-    <div className="flex h-full flex-col border-r bg-sidebar">
-      <div className="flex h-16 items-center border-b px-6">
-        <h2 className="text-lg font-semibold">Student Portal</h2>
+    <div className="sidebar-root">
+      {/* Brand */}
+      <div className="sidebar-brand">
+        <div className="sidebar-brand-icon">
+          <Zap size={16} strokeWidth={2.5} color="white" />
+        </div>
+        <span className="sidebar-brand-name">ZamHack</span>
       </div>
-      <nav className="flex-1 space-y-1 p-4">
+
+      {/* Nav */}
+      <nav className="sidebar-nav">
+        <p className="sidebar-section-label">Menu</p>
         {studentNavItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
@@ -38,20 +45,19 @@ export const StudentSidebar = () => {
             <Link
               key={item.href}
               href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
+              className={`sidebar-link ${isActive ? "active" : ""}`}
             >
-              <Icon className="h-5 w-5" />
+              <span className="sidebar-link-icon">
+                <Icon size={16} />
+              </span>
               {item.label}
             </Link>
           )
         })}
       </nav>
-      <div className="border-t p-4">
+
+      {/* Logout */}
+      <div className="sidebar-footer">
         <LogoutButton />
       </div>
     </div>

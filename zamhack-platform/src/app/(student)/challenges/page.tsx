@@ -1,10 +1,9 @@
 import { createClient } from "@/utils/supabase/server"
 import { ChallengeCard } from "@/components/challenge-card"
 import { ChallengeFilters } from "@/components/challenge-filters"
-import { redirect } from "next/navigation"
 import { Database } from "@/types/supabase"
+import { redirect } from "next/navigation"
 
-// Define the exact return type we need
 type ChallengeWithOrg = Database["public"]["Tables"]["challenges"]["Row"] & {
   organization: { name: string } | null
 }
@@ -14,6 +13,10 @@ interface ChallengesPageProps {
     q?: string
     difficulty?: string
     status?: string
+    participation_type?: string
+    entry_type?: string
+    category?: string
+    sort?: string
   }>
 }
 
@@ -21,50 +24,75 @@ async function getChallenges(searchParams: {
   q?: string
   difficulty?: string
   status?: string
+  participation_type?: string
+  entry_type?: string
+  category?: string
+  sort?: string
 }): Promise<ChallengeWithOrg[]> {
   const supabase = await createClient()
 
   const { data: { user }, error: userError } = await supabase.auth.getUser()
-  if (userError || !user) {
-    redirect("/login")
-  }
+  if (userError || !user) redirect("/login")
 
-  // UPDATED QUERY: Select organization name relation
   let query = supabase
     .from("challenges")
     .select("*, organization:organizations(name)")
 
-  // 1. Search Filter
-  if (searchParams.q) {
+  // 1. Search
+  if (searchParams.q?.trim()) {
     const term = searchParams.q.trim()
-    if (term) {
-      query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%`)
-    }
+    query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%`)
   }
 
-  // 2. Difficulty Filter
-  if (searchParams.difficulty) {
-    query = query.eq("difficulty", searchParams.difficulty as any)
+  // 2. Difficulty — cast to text for safe comparison against the enum
+  if (searchParams.difficulty && searchParams.difficulty !== "all") {
+    query = query.filter("difficulty::text", "eq", searchParams.difficulty)
   }
 
-  // 3. Status Filter
+  // 3. Status
   if (searchParams.status) {
     query = query.eq("status", searchParams.status as any)
   } else {
-    // Show open, in_progress, AND closed challenges (so students can see results)
     query = query.in("status", ["approved", "in_progress", "closed", "completed"])
   }
 
-  query = query.order("created_at", { ascending: false })
+  // 4. Participation Type
+  // "solo"  → challenges that allow solo play (type = 'solo' OR 'both')
+  // "team"  → challenges that allow team play (type = 'team' OR 'both')
+  if (searchParams.participation_type === "solo") {
+    query = query.or("participation_type.eq.solo,participation_type.eq.both")
+  } else if (searchParams.participation_type === "team") {
+    query = query.or("participation_type.eq.team,participation_type.eq.both")
+  }
+
+  // 5. Entry Type
+  // "free" → entry_fee_amount IS NULL or 0
+  // "paid" → entry_fee_amount > 0 (and not null)
+  if (searchParams.entry_type === "free") {
+    query = query.or("entry_fee_amount.is.null,entry_fee_amount.eq.0")
+  } else if (searchParams.entry_type === "paid") {
+    query = query.gt("entry_fee_amount", 0)
+  }
+
+  // 6. Industry / Category
+  if (searchParams.category && searchParams.category !== "all") {
+    query = query.eq("industry", searchParams.category)
+  }
+
+  // 7. Sort
+  if (searchParams.sort === "closing_soon") {
+    query = query.order("end_date", { ascending: true })
+  } else {
+    query = query.order("created_at", { ascending: false })
+  }
 
   const { data, error } = await query
 
   if (error) {
-    console.error("Error fetching challenges:", error)
+    console.error("Error fetching challenges:", error.message, error.details)
     return []
   }
 
-  // Cast safely because we know the query shape matches
   return (data as unknown as ChallengeWithOrg[]) || []
 }
 

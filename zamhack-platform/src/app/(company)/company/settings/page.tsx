@@ -11,7 +11,6 @@ export default async function CompanySettingsPage() {
 
   if (!user) redirect("/login")
 
-  // Fetch profile data from the database
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
@@ -19,16 +18,14 @@ export default async function CompanySettingsPage() {
     .single()
 
   if (!profile) {
-    return <div>Error loading profile. Please try logging in again.</div>
+    return <div className="p-6">Error loading profile. Please try logging in again.</div>
   }
 
   return (
-    <div className="space-y-6 p-6 max-w-2xl">
+    <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-3xl font-bold">Account Settings</h1>
-        <p className="text-muted-foreground">
-          Manage your personal account preferences.
-        </p>
+        <h1 className="cp-page-title">Account Settings</h1>
+        <p className="cp-page-subtitle">Manage your personal account details and security.</p>
       </div>
 
       <ProfileForm profile={profile} email={user.email || ""} />

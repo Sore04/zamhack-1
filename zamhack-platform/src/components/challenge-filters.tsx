@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -18,29 +18,37 @@ export function ChallengeFilters() {
   const pathname = usePathname()
   const { replace } = useRouter()
 
-  // Local state
   const [query, setQuery] = useState(searchParams.get("q") || "")
   const [category, setCategory] = useState(searchParams.get("category") || "all")
   const [sort, setSort] = useState(searchParams.get("sort") || "newest")
+  const [difficulty, setDifficulty] = useState(searchParams.get("difficulty") || "all")
+  const [participationType, setParticipationType] = useState(searchParams.get("participation_type") || "all")
+  const [entryType, setEntryType] = useState(searchParams.get("entry_type") || "all")
 
-  // Debounced URL updater for Search Text
+  const hasActiveFilters =
+    !!query ||
+    category !== "all" ||
+    sort !== "newest" ||
+    difficulty !== "all" ||
+    participationType !== "all" ||
+    entryType !== "all"
+
+  // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => {
-      const params = new URLSearchParams(searchParams)
+      const params = new URLSearchParams(searchParams.toString())
       if (query) {
         params.set("q", query)
       } else {
         params.delete("q")
       }
       replace(`${pathname}?${params.toString()}`)
-    }, 300) // 300ms debounce
-
+    }, 300)
     return () => clearTimeout(timer)
-  }, [query, pathname, replace, searchParams])
+  }, [query]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Immediate URL updater for Dropdowns
   const handleFilterChange = (key: string, value: string) => {
-    const params = new URLSearchParams(searchParams)
+    const params = new URLSearchParams(searchParams.toString())
     if (value && value !== "all") {
       params.set(key, value)
     } else {
@@ -53,6 +61,9 @@ export function ChallengeFilters() {
     setQuery("")
     setCategory("all")
     setSort("newest")
+    setDifficulty("all")
+    setParticipationType("all")
+    setEntryType("all")
     replace(pathname)
   }
 
@@ -63,10 +74,10 @@ export function ChallengeFilters() {
           <Filter className="h-4 w-4" />
           Filter Challenges
         </h3>
-        {(query || category !== "all" || sort !== "newest") && (
-          <Button 
-            variant="ghost" 
-            size="sm" 
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={handleClear}
             className="h-8 text-xs text-muted-foreground hover:text-foreground"
           >
@@ -76,8 +87,8 @@ export function ChallengeFilters() {
         )}
       </div>
 
+      {/* Row 1: Search + Category + Sort */}
       <div className="grid gap-4 md:grid-cols-3">
-        {/* Search Bar */}
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -88,9 +99,8 @@ export function ChallengeFilters() {
           />
         </div>
 
-        {/* Category Dropdown (Mapping to Industry in DB) */}
-        <Select 
-          value={category} 
+        <Select
+          value={category}
           onValueChange={(val) => {
             setCategory(val)
             handleFilterChange("category", val)
@@ -108,9 +118,8 @@ export function ChallengeFilters() {
           </SelectContent>
         </Select>
 
-        {/* Sort Dropdown */}
-        <Select 
-          value={sort} 
+        <Select
+          value={sort}
           onValueChange={(val) => {
             setSort(val)
             handleFilterChange("sort", val)
@@ -123,6 +132,61 @@ export function ChallengeFilters() {
             <SelectItem value="newest">Newest First</SelectItem>
             <SelectItem value="closing_soon">Closing Soon</SelectItem>
             <SelectItem value="participants_high">Most Popular</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Row 2: Difficulty + Participation Type + Entry Type */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Select
+          value={difficulty}
+          onValueChange={(val) => {
+            setDifficulty(val)
+            handleFilterChange("difficulty", val)
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Difficulty Level" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Levels</SelectItem>
+            <SelectItem value="beginner">🟢 Beginner</SelectItem>
+            <SelectItem value="intermediate">🟡 Intermediate</SelectItem>
+            <SelectItem value="advanced">🔴 Advanced</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={participationType}
+          onValueChange={(val) => {
+            setParticipationType(val)
+            handleFilterChange("participation_type", val)
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Participation Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Solo & Team</SelectItem>
+            <SelectItem value="solo">👤 Solo Only</SelectItem>
+            <SelectItem value="team">👥 Team Only</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={entryType}
+          onValueChange={(val) => {
+            setEntryType(val)
+            handleFilterChange("entry_type", val)
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Entry Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Challenges</SelectItem>
+            <SelectItem value="free">🆓 Free Entry</SelectItem>
+            <SelectItem value="paid">💳 Paid Entry</SelectItem>
           </SelectContent>
         </Select>
       </div>

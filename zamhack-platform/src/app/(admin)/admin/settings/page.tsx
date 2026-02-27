@@ -1,6 +1,8 @@
 import { createClient } from "@/utils/supabase/server"
 import { redirect } from "next/navigation"
 import { SettingsForm } from "./settings-form"
+import { Settings } from "lucide-react"
+import "@/app/(admin)/admin.css"
 
 export default async function AdminSettingsPage() {
   const supabase = await createClient()
@@ -8,7 +10,6 @@ export default async function AdminSettingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect("/login")
 
-  // Check Admin Role
   const { data: currentUserProfile } = await supabase
     .from("profiles")
     .select("role")
@@ -17,42 +18,46 @@ export default async function AdminSettingsPage() {
 
   if (currentUserProfile?.role !== "admin") {
     return (
-      <div className="p-6">
-        <h1 className="text-2xl font-bold text-destructive">Access Denied</h1>
-        <p>You do not have permission to view this page.</p>
+      <div className="space-y-4" data-layout="admin">
+        <div className="admin-alert danger">
+          <span style={{ fontWeight: 600 }}>Access Denied</span> — You do not have permission to view this page.
+        </div>
       </div>
     )
   }
 
-  // Fetch settings
   const { data: settings, error } = await supabase
-    // FIX: Cast string to 'any' to bypass TS error for the new table
     .from("platform_settings" as any)
     .select("*")
     .eq("id", true)
     .single()
 
   if (error || !settings) {
-    // Fallback if DB table is empty or error occurs
     console.error("Error fetching settings:", error)
     return (
-      <div className="p-6">
-        <h1 className="text-2xl font-bold">Error</h1>
-        <p>Could not load platform settings. Please ensure the database is initialized.</p>
+      <div className="space-y-4" data-layout="admin">
+        <div className="admin-alert danger">
+          Could not load platform settings. Please ensure the database is initialized.
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6 p-6 max-w-4xl">
-      <div>
-        <h1 className="text-3xl font-bold">Platform Settings</h1>
-        <p className="text-muted-foreground">
-          Manage global configuration and system status.
+    <div className="space-y-6" data-layout="admin" style={{ maxWidth: 860 }}>
+
+      {/* Page Header */}
+      <div className="admin-page-header">
+        <h1 className="admin-page-title">
+          Platform <span>Settings</span>
+        </h1>
+        <p className="admin-page-subtitle">
+          Manage global configuration, defaults, and system controls for ZamHack.
         </p>
       </div>
 
       <SettingsForm initialSettings={settings as any} />
+
     </div>
   )
 }

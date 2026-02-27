@@ -2,9 +2,8 @@ import { createClient } from "@/utils/supabase/server"
 import { Database } from "@/types/supabase"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
+import { Plus, FileText } from "lucide-react"
+import { ChallengesTable } from "./challenges-table"
 
 type Challenge = Database["public"]["Tables"]["challenges"]["Row"]
 
@@ -21,9 +20,7 @@ async function getChallengesList(): Promise<ChallengeWithStats[]> {
     error: userError,
   } = await supabase.auth.getUser()
 
-  if (userError || !user) {
-    redirect("/login")
-  }
+  if (userError || !user) redirect("/login")
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
@@ -31,9 +28,7 @@ async function getChallengesList(): Promise<ChallengeWithStats[]> {
     .eq("id", user.id)
     .single()
 
-  if (profileError || !profile) {
-    redirect("/login")
-  }
+  if (profileError || !profile) redirect("/login")
 
   if (profile.role !== "company_admin" && profile.role !== "company_member") {
     redirect("/dashboard")
@@ -43,7 +38,6 @@ async function getChallengesList(): Promise<ChallengeWithStats[]> {
     throw new Error("User does not have an organization assigned")
   }
 
-  // Fetch all challenges for this organization
   const { data: challenges, error: challengesError } = await supabase
     .from("challenges")
     .select("*")
@@ -56,33 +50,24 @@ async function getChallengesList(): Promise<ChallengeWithStats[]> {
   }
 
   const challengesList = (challenges as Challenge[]) || []
+  if (challengesList.length === 0) return []
 
-  if (challengesList.length === 0) {
-    return []
-  }
-
-  // Get challenge IDs
   const challengeIds = challengesList.map((c) => c.id)
 
-  // Fetch participant counts for each challenge
+  // Participant counts
   const { data: participants } = await supabase
     .from("challenge_participants")
     .select("challenge_id")
     .in("challenge_id", challengeIds)
 
-  // Count participants per challenge
   const participantCountMap = new Map<string, number>()
-  if (participants) {
-    participants.forEach((p) => {
-      if (p.challenge_id) {
-        const current = participantCountMap.get(p.challenge_id) || 0
-        participantCountMap.set(p.challenge_id, current + 1)
-      }
-    })
-  }
+  participants?.forEach((p) => {
+    if (p.challenge_id) {
+      participantCountMap.set(p.challenge_id, (participantCountMap.get(p.challenge_id) || 0) + 1)
+    }
+  })
 
-  // Fetch submission counts
-  // First get participant IDs for all challenges
+  // Submission counts
   const { data: allParticipants } = await supabase
     .from("challenge_participants")
     .select("id, challenge_id")
@@ -91,12 +76,9 @@ async function getChallengesList(): Promise<ChallengeWithStats[]> {
   const participantIds = allParticipants?.map((p) => p.id) || []
   const participantToChallengeMap = new Map<string, string>()
   allParticipants?.forEach((p) => {
-    if (p.challenge_id && p.id) {
-      participantToChallengeMap.set(p.id, p.challenge_id)
-    }
+    if (p.challenge_id && p.id) participantToChallengeMap.set(p.id, p.challenge_id)
   })
 
-  // Count submissions per challenge
   const submissionCountMap = new Map<string, number>()
   if (participantIds.length > 0) {
     const { data: submissions } = await supabase
@@ -104,182 +86,88 @@ async function getChallengesList(): Promise<ChallengeWithStats[]> {
       .select("participant_id")
       .in("participant_id", participantIds)
 
-    if (submissions) {
-      submissions.forEach((s) => {
-        if (s.participant_id) {
-          const challengeId = participantToChallengeMap.get(s.participant_id)
-          if (challengeId) {
-            const current = submissionCountMap.get(challengeId) || 0
-            submissionCountMap.set(challengeId, current + 1)
-          }
+    submissions?.forEach((s) => {
+      if (s.participant_id) {
+        const challengeId = participantToChallengeMap.get(s.participant_id)
+        if (challengeId) {
+          submissionCountMap.set(challengeId, (submissionCountMap.get(challengeId) || 0) + 1)
         }
-      })
-    }
-  }
-
-  // Combine challenges with stats
-  const challengesWithStats: ChallengeWithStats[] = challengesList.map(
-    (challenge) => ({
-      ...challenge,
-      participantCount: participantCountMap.get(challenge.id) || 0,
-      submissionCount: submissionCountMap.get(challenge.id) || 0,
+      }
     })
-  )
-
-  return challengesWithStats
-}
-
-const getStatusBadgeVariant = (status: string | null) => {
-  switch (status) {
-    case "draft":
-      return "outline" // Gray
-    case "approved":
-    case "in_progress":
-      return "success" // Green
-    case "completed":
-      return "default" // Blue (using default as blue)
-    case "pending_approval":
-    case "under_review":
-      return "warning" // Yellow
-    case "cancelled":
-      return "destructive" // Red
-    default:
-      return "outline"
   }
+
+  return challengesList.map((challenge) => ({
+    ...challenge,
+    participantCount: participantCountMap.get(challenge.id) || 0,
+    submissionCount: submissionCountMap.get(challenge.id) || 0,
+  }))
 }
 
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return "N/A"
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-}
-
-const formatDateRange = (startDate: string | null, endDate: string | null) => {
-  const start = formatDate(startDate)
-  const end = formatDate(endDate)
-  if (start === "N/A" && end === "N/A") return "N/A"
-  if (start === "N/A") return `Ends: ${end}`
-  if (end === "N/A") return `Starts: ${start}`
-  return `${start} - ${end}`
-}
-
-export default async function ChallengesListPage() {
+export default async function CompanyChallengesPage() {
   const challenges = await getChallengesList()
+
+  const stats = {
+    total: challenges.length,
+    active: challenges.filter((c) => c.status === "approved" || c.status === "in_progress").length,
+    pending: challenges.filter((c) => c.status === "pending_approval" || c.status === "draft").length,
+    completed: challenges.filter((c) => c.status === "completed").length,
+  }
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex justify-between items-start">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold">Challenges</h1>
-          <p className="text-muted-foreground">
-            Manage your hackathons and assessments
-          </p>
+
+      {/* ── Page Header ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+        <div>
+          <h1 className="cp-page-title">Challenges</h1>
+          <p className="cp-page-subtitle">Manage and track all your hackathon challenges.</p>
         </div>
-        <Button asChild>
-          <Link href="/company/challenges/create">Create Challenge</Link>
-        </Button>
+        <Link href="/company/challenges/create" className="cp-btn cp-btn-primary">
+          <Plus style={{ width: "1rem", height: "1rem" }} />
+          Create Challenge
+        </Link>
       </div>
 
-      {/* Table / List */}
+      {/* ── Summary Stats ── */}
+      <div className="cp-grid-4">
+        <div className="cp-stat-card">
+          <p className="cp-stat-value">{stats.total}</p>
+          <p className="cp-stat-label">Total Challenges</p>
+        </div>
+        <div className="cp-stat-card primary">
+          <p className="cp-stat-value">{stats.active}</p>
+          <p className="cp-stat-label">Active</p>
+        </div>
+        <div className="cp-stat-card">
+          <p className="cp-stat-value">{stats.pending}</p>
+          <p className="cp-stat-label">Draft / Pending</p>
+        </div>
+        <div className="cp-stat-card navy">
+          <p className="cp-stat-value">{stats.completed}</p>
+          <p className="cp-stat-label">Completed</p>
+        </div>
+      </div>
+
+      {/* ── Challenges Table (Client Component) ── */}
       {challenges.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <p className="text-muted-foreground mb-4">
-              You haven't created any challenges yet.
+        <div className="cp-card">
+          <div className="cp-empty-state">
+            <div className="cp-empty-icon">
+              <FileText style={{ width: "1.75rem", height: "1.75rem" }} />
+            </div>
+            <p className="cp-empty-title">No challenges yet</p>
+            <p className="cp-empty-desc">
+              Create your first challenge to start attracting student talent.
             </p>
-            <Button asChild>
-              <Link href="/company/challenges/create">
-                Create your first challenge
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="rounded-md border bg-card">
-          <div className="relative w-full overflow-auto">
-            <table className="w-full caption-bottom text-sm">
-              <thead className="[&_tr]:border-b">
-                <tr className="border-b transition-colors hover:bg-muted/50">
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                    Title
-                  </th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                    Status
-                  </th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                    Timeline
-                  </th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                    Participants
-                  </th>
-                  <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="[&_tr:last-child]:border-0">
-                {challenges.map((challenge) => (
-                  <tr
-                    key={challenge.id}
-                    className="border-b transition-colors hover:bg-muted/50"
-                  >
-                    <td className="p-4 align-middle font-medium">
-                      <Link
-                        href={`/company/challenges/${challenge.id}`}
-                        className="hover:underline"
-                      >
-                        {challenge.title}
-                      </Link>
-                    </td>
-                    <td className="p-4 align-middle">
-                      <Badge
-                        variant={getStatusBadgeVariant(challenge.status) as any}
-                      >
-                        {challenge.status?.replace("_", " ") || "Unknown"}
-                      </Badge>
-                    </td>
-                    <td className="p-4 align-middle text-muted-foreground">
-                      {formatDateRange(challenge.start_date, challenge.end_date)}
-                    </td>
-                    <td className="p-4 align-middle">{challenge.participantCount}</td>
-                    <td className="p-4 align-middle text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" asChild>
-                          <Link href={`/company/challenges/${challenge.id}`}>
-                            Manage
-                          </Link>
-                        </Button>
-                        <Button size="sm" variant="ghost" asChild>
-                          <Link href={`/company/challenges/${challenge.id}`}>
-                            Edit
-                          </Link>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Link href="/company/challenges/create" className="cp-btn cp-btn-primary">
+              <Plus style={{ width: "1rem", height: "1rem" }} />
+              Create Challenge
+            </Link>
           </div>
         </div>
+      ) : (
+        <ChallengesTable challenges={challenges} />
       )}
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

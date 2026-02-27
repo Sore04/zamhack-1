@@ -1,17 +1,16 @@
 import { createClient } from "@/utils/supabase/server"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { EditProfileDialog } from "@/components/profile/edit-profile-dialog"
 import { Database } from "@/types/supabase"
 import { redirect } from "next/navigation"
-import { Github, Linkedin, FileText, GraduationCap, BookOpen } from "lucide-react"
+import { Github, Linkedin, FileText, GraduationCap, BookOpen, ExternalLink } from "lucide-react"
 
+// ── Types (identical to original) ─────────────────────────────────────────────
 type Profile = Database["public"]["Tables"]["profiles"]["Row"]
 
+// ── Data fetching (identical to original) ─────────────────────────────────────
 async function getProfileData() {
   const supabase = await createClient()
 
-  // Get current user
   const {
     data: { user },
     error: userError,
@@ -21,7 +20,6 @@ async function getProfileData() {
     redirect("/login")
   }
 
-  // Fetch user profile
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("*")
@@ -38,201 +36,222 @@ async function getProfileData() {
   }
 }
 
+// ── Helper (identical to original) ────────────────────────────────────────────
 const getInitials = (firstName: string | null, lastName: string | null): string => {
   const first = firstName?.charAt(0).toUpperCase() || ""
-  const last = lastName?.charAt(0).toUpperCase() || ""
+  const last  = lastName?.charAt(0).toUpperCase()  || ""
   return first + last || "U"
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default async function ProfilePage() {
-  const { profile, user } = await getProfileData()
+  const { profile } = await getProfileData()
 
   const fullName = profile
     ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "User"
     : "User"
 
+  // Same headline logic as original
   const headline = profile
     ? [profile.university, profile.degree].filter(Boolean).join(" • ") || "No education information"
     : "No education information"
 
+  const initials = getInitials(profile?.first_name || null, profile?.last_name || null)
+
+  // Collect social links that actually exist
+  const socialLinks = [
+    { href: profile?.github_url,   label: "GitHub",   icon: Github   },
+    { href: profile?.linkedin_url, label: "LinkedIn",  icon: Linkedin },
+    { href: profile?.resume_link,  label: "Resume",    icon: FileText },
+  ].filter((l) => Boolean(l.href))
+
   return (
-    <div className="space-y-6">
-      {/* Header Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-4">
-              {/* Avatar */}
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-2xl font-semibold text-primary">
-                {profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt={fullName}
-                    className="h-full w-full rounded-full object-cover"
-                  />
-                ) : (
-                  getInitials(profile?.first_name || null, profile?.last_name || null)
-                )}
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">{fullName}</h1>
-                <p className="text-muted-foreground mt-1">{headline}</p>
-              </div>
-            </div>
-            <EditProfileDialog profile={profile} />
+    <div className="pf-page">
+
+      {/* ── Hero card ──────────────────────────────────────────────────── */}
+      <div className="pf-hero">
+        {/* Gradient banner */}
+        <div className="pf-hero-banner" />
+
+        <div className="pf-hero-body">
+          {/* Avatar */}
+          <div className="pf-avatar-wrapper">
+            {profile?.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={fullName}
+                className="pf-avatar-img"
+              />
+            ) : (
+              <span className="pf-avatar-initials">{initials}</span>
+            )}
           </div>
-        </CardHeader>
-      </Card>
 
-      {/* Main Content Grid */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Left Column */}
-        <div className="space-y-6">
+          {/* Identity + edit button */}
+          <div className="pf-hero-info">
+            <div className="pf-hero-name-row">
+              <div>
+                <h1 className="pf-name">{fullName}</h1>
+                <p className="pf-headline">{headline}</p>
+              </div>
+              {/* EditProfileDialog is unchanged — just repositioned */}
+              <EditProfileDialog profile={profile} />
+            </div>
+
+            {/* Social pills (only shown if links exist) */}
+            {socialLinks.length > 0 && (
+              <div className="pf-social-row">
+                {socialLinks.map(({ href, label, icon: Icon }) => (
+                  <a
+                    key={label}
+                    href={href!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="pf-social-pill"
+                  >
+                    <Icon size={13} />
+                    {label}
+                    <ExternalLink size={11} />
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Content grid ───────────────────────────────────────────────── */}
+      <div className="pf-grid">
+
+        {/* ── Left column ────────────────────────────────────────────── */}
+        <div className="pf-col">
+
           {/* About Me */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BookOpen className="h-5 w-5" />
-                About Me
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="pf-card">
+            <div className="pf-card-header">
+              <div className="pf-card-icon">
+                <BookOpen size={15} />
+              </div>
+              <h2 className="pf-card-title">About Me</h2>
+            </div>
+            <div className="pf-card-body">
               {profile?.bio ? (
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{profile.bio}</p>
+                <p className="pf-bio">{profile.bio}</p>
               ) : (
-                <p className="text-sm text-muted-foreground italic">No bio added yet</p>
+                <p className="pf-empty">No bio added yet. Click Edit Profile to add one.</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          {/* Social Links */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Social Links</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
+          {/* Social Links (full list) */}
+          <div className="pf-card">
+            <div className="pf-card-header">
+              <div className="pf-card-icon pf-card-icon-navy">
+                <ExternalLink size={15} />
+              </div>
+              <h2 className="pf-card-title">Social Links</h2>
+            </div>
+            <div className="pf-links-list">
+              {/* GitHub */}
               {profile?.github_url ? (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  asChild
-                >
-                  <a href={profile.github_url} target="_blank" rel="noopener noreferrer">
-                    <Github className="mr-2 h-4 w-4" />
-                    GitHub
-                  </a>
-                </Button>
+                <a href={profile.github_url} target="_blank" rel="noopener noreferrer" className="pf-link-row">
+                  <div className="pf-link-icon"><Github size={15} /></div>
+                  <span className="pf-link-label">GitHub</span>
+                  <ExternalLink size={12} className="pf-link-arrow" />
+                </a>
               ) : (
-                <div className="text-sm text-muted-foreground italic py-2">
-                  No GitHub link added
+                <div className="pf-link-row pf-link-empty">
+                  <div className="pf-link-icon"><Github size={15} /></div>
+                  <span className="pf-link-label pf-empty">No GitHub link added</span>
                 </div>
               )}
 
+              {/* LinkedIn */}
               {profile?.linkedin_url ? (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  asChild
-                >
-                  <a href={profile.linkedin_url} target="_blank" rel="noopener noreferrer">
-                    <Linkedin className="mr-2 h-4 w-4" />
-                    LinkedIn
-                  </a>
-                </Button>
+                <a href={profile.linkedin_url} target="_blank" rel="noopener noreferrer" className="pf-link-row">
+                  <div className="pf-link-icon"><Linkedin size={15} /></div>
+                  <span className="pf-link-label">LinkedIn</span>
+                  <ExternalLink size={12} className="pf-link-arrow" />
+                </a>
               ) : (
-                <div className="text-sm text-muted-foreground italic py-2">
-                  No LinkedIn link added
+                <div className="pf-link-row pf-link-empty">
+                  <div className="pf-link-icon"><Linkedin size={15} /></div>
+                  <span className="pf-link-label pf-empty">No LinkedIn link added</span>
                 </div>
               )}
 
+              {/* Resume */}
               {profile?.resume_link ? (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  asChild
-                >
-                  <a href={profile.resume_link} target="_blank" rel="noopener noreferrer">
-                    <FileText className="mr-2 h-4 w-4" />
-                    Resume
-                  </a>
-                </Button>
+                <a href={profile.resume_link} target="_blank" rel="noopener noreferrer" className="pf-link-row">
+                  <div className="pf-link-icon"><FileText size={15} /></div>
+                  <span className="pf-link-label">Resume</span>
+                  <ExternalLink size={12} className="pf-link-arrow" />
+                </a>
               ) : (
-                <div className="text-sm text-muted-foreground italic py-2">
-                  No resume link added
+                <div className="pf-link-row pf-link-empty">
+                  <div className="pf-link-icon"><FileText size={15} /></div>
+                  <span className="pf-link-label pf-empty">No resume link added</span>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+
         </div>
 
-        {/* Right Column */}
-        <div className="space-y-6">
+        {/* ── Right column ───────────────────────────────────────────── */}
+        <div className="pf-col">
+
           {/* Education */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <GraduationCap className="h-5 w-5" />
-                Education
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {profile?.university ? (
-                <div>
-                  <p className="text-sm font-medium">University</p>
-                  <p className="text-sm text-muted-foreground">{profile.university}</p>
+          <div className="pf-card">
+            <div className="pf-card-header">
+              <div className="pf-card-icon pf-card-icon-navy">
+                <GraduationCap size={15} />
+              </div>
+              <h2 className="pf-card-title">Education</h2>
+            </div>
+            <div className="pf-card-body">
+              {profile?.university || profile?.degree || profile?.graduation_year ? (
+                <div className="pf-edu-block">
+                  {profile?.university && (
+                    <div className="pf-edu-row">
+                      <span className="pf-edu-label">University</span>
+                      <span className="pf-edu-value">{profile.university}</span>
+                    </div>
+                  )}
+                  {profile?.degree && (
+                    <div className="pf-edu-row">
+                      <span className="pf-edu-label">Degree</span>
+                      <span className="pf-edu-value">{profile.degree}</span>
+                    </div>
+                  )}
+                  {profile?.graduation_year && (
+                    <div className="pf-edu-row">
+                      <span className="pf-edu-label">Graduation Year</span>
+                      <span className="pf-edu-value">{profile.graduation_year}</span>
+                    </div>
+                  )}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground italic">No university added</p>
+                <p className="pf-empty">No education information added yet.</p>
               )}
+            </div>
+          </div>
 
-              {profile?.degree ? (
-                <div>
-                  <p className="text-sm font-medium">Degree</p>
-                  <p className="text-sm text-muted-foreground">{profile.degree}</p>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">No degree added</p>
-              )}
+          {/* Skills — placeholder (identical to original) */}
+          <div className="pf-card">
+            <div className="pf-card-header">
+              <div className="pf-card-icon pf-card-icon-navy">
+                <span style={{ fontSize: "0.7rem", fontWeight: 800, letterSpacing: "-0.02em" }}>SK</span>
+              </div>
+              <h2 className="pf-card-title">Skills</h2>
+            </div>
+            <div className="pf-card-body">
+              <p className="pf-empty">Skills section coming soon.</p>
+            </div>
+          </div>
 
-              {profile?.graduation_year ? (
-                <div>
-                  <p className="text-sm font-medium">Graduation Year</p>
-                  <p className="text-sm text-muted-foreground">{profile.graduation_year}</p>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">No graduation year added</p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Skills - Placeholder */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Skills</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground italic">
-                Skills section coming soon
-              </p>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

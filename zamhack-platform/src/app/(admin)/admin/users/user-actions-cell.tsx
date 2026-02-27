@@ -1,8 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { 
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -43,34 +42,51 @@ export function UserActionsCell({ userId, status }: UserActionsCellProps) {
   }
 
   return (
-    <div className="flex items-center justify-end gap-2">
-      <Button 
-        variant={isActive ? "outline" : "default"} 
-        size="sm" 
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.5rem" }}>
+      {/* Suspend / Reactivate */}
+      <button
         onClick={handleToggleStatus}
         disabled={isLoading}
-        className={!isActive ? "bg-green-600 hover:bg-green-700" : "text-amber-600 border-amber-200 hover:bg-amber-50 hover:text-amber-700"}
+        className={`admin-btn admin-btn-sm ${isActive ? "admin-btn-outline" : "admin-btn-primary"}`}
+        style={
+          isActive
+            ? { color: "var(--admin-yellow-text)", borderColor: "var(--admin-yellow)", background: "var(--admin-yellow-bg)" }
+            : { background: "var(--admin-green)", color: "white" }
+        }
+        title={isActive ? "Suspend user" : "Reactivate user"}
       >
-        {isActive ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
-        <span className="sr-only">{isActive ? "Disable" : "Enable"}</span>
-      </Button>
+        {isActive ? (
+          <Ban style={{ width: 14, height: 14 }} />
+        ) : (
+          <CheckCircle style={{ width: 14, height: 14 }} />
+        )}
+        {isActive ? "Suspend" : "Reactivate"}
+      </button>
 
+      {/* Delete */}
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="destructive" size="sm" disabled={isLoading}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <button
+            className="admin-btn admin-btn-sm admin-btn-danger"
+            disabled={isLoading}
+            title="Delete user"
+          >
+            <Trash2 style={{ width: 14, height: 14 }} />
+          </button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this account?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the user's profile and remove their data from the servers.
+              This action cannot be undone. The user's profile and all associated data will be permanently removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Delete Account
             </AlertDialogAction>
           </AlertDialogFooter>
