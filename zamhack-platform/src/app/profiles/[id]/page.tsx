@@ -1,5 +1,3 @@
-// src/app/profiles/[id]/page.tsx
-
 import { createClient } from "@/utils/supabase/server"
 import { notFound, redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,10 +13,12 @@ export default async function PublicProfilePage({
 }) {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
   if (!user) redirect("/login")
 
-  // Fetch the student's profile
   const { data: profile, error } = await supabase
     .from("profiles")
     .select("*")
@@ -27,7 +27,6 @@ export default async function PublicProfilePage({
 
   if (error || !profile) notFound()
 
-  // Fetch skills via student_skills join
   const { data: studentSkills } = await supabase
     .from("student_skills")
     .select("level, skill:skills(name)")
@@ -73,7 +72,7 @@ export default async function PublicProfilePage({
         )}
       </Card>
 
-      {/* Skills — pulled from student_skills table */}
+      {/* Skills */}
       {studentSkills && studentSkills.length > 0 && (
         <Card>
           <CardHeader>
@@ -86,7 +85,7 @@ export default async function PublicProfilePage({
               return (
                 <Badge key={skillName} variant="secondary">
                   {skillName}
-                  <span className="ml-1 text-xs text-muted-foreground capitalize">
+                  <span className="ml-1 text-xs opacity-60 capitalize">
                     · {entry.level}
                   </span>
                 </Badge>
