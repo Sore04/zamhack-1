@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ZamHack</string>
+    <string name="title_activity_main">ZamHack</string>
+    <string name="package_name">com.zamhack.app</string>
+    <string name="custom_url_scheme">com.zamhack.app</string>
+</resources>
