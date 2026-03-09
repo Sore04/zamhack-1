@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Trophy, Medal, Award, ArrowLeft, Star } from "lucide-react"
 import Link from "next/link"
+import CertificateDropdown from "@/components/certificate/certificate-dropdown" // ← ADD
 
 // Define the exact shape of our joined data to satisfy TypeScript
 interface WinnerData {
@@ -31,6 +32,9 @@ export default async function ChallengeResultsPage({
 }) {
   const { id } = await params
   const supabase = await createClient()
+
+  // ← ADD: get current user to check certificate eligibility
+  const { data: { user } } = await supabase.auth.getUser()
 
   // 1. Fetch Challenge Status
   const { data: challenge } = await supabase
@@ -82,12 +86,25 @@ export default async function ChallengeResultsPage({
   // all the data we need for both the podium and the full leaderboard.
 
   // Attach stored score to each winner for the podium display.
-  // score comes directly from the winners table — set at closeChallenge /
-  // recalculateWinners time — so it is always correct regardless of RLS.
   const winnersWithScore = (winners ?? []).map((w) => ({
     ...w,
     totalScore: w.score ?? 0,
   }))
+
+  // ← ADD: derive current user's certificate eligibility from winners table
+  const orgName = (challenge.organization as { name: string } | null)?.name ?? "ZamHack"
+  const awardDate = new Date().toLocaleDateString("en-US", {
+    year: "numeric", month: "long", day: "numeric",
+  })
+  const currentUserWinner = user
+    ? winnersWithScore.find((w) => w.profile_id === user.id) ?? null
+    : null
+  const isTop3 = currentUserWinner !== null
+  // Any winner in the table counts as a participant who completed
+  const hasParticipated = currentUserWinner !== null
+  const currentUserName = currentUserWinner
+    ? `${currentUserWinner.profile?.first_name ?? ""} ${currentUserWinner.profile?.last_name ?? ""}`.trim()
+    : ""
 
   const getRankConfig = (rank: number) => {
     switch (rank) {
@@ -107,7 +124,7 @@ export default async function ChallengeResultsPage({
           color: "text-slate-600",
           bg: "bg-gradient-to-b from-slate-50 to-slate-100/60 border-slate-200",
           iconColor: "text-slate-400",
-          icon: Medal, // FIX: was Ribbon, which doesn't exist in lucide-react
+          icon: Medal,
           badgeBg: "bg-black/90 text-white hover:bg-black/80",
           heightClass: "md:min-h-[19rem]",
           scale: "scale-100",
@@ -118,7 +135,7 @@ export default async function ChallengeResultsPage({
           color: "text-amber-700",
           bg: "bg-gradient-to-b from-orange-50 to-orange-100/60 border-orange-200",
           iconColor: "text-amber-600",
-          icon: Award, // FIX: was Ribbon, which doesn't exist in lucide-react
+          icon: Award,
           badgeBg: "bg-black/90 text-white hover:bg-black/80",
           heightClass: "md:min-h-[17rem]",
           scale: "scale-100",
@@ -141,11 +158,30 @@ export default async function ChallengeResultsPage({
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 pb-20">
       <div className="container max-w-4xl py-12 px-4 mx-auto">
-        <Button variant="ghost" asChild className="mb-8">
-          <Link href={`/challenges/${id}`}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Challenge
-          </Link>
-        </Button>
+
+        {/* ← CHANGED: was a plain Button, now flex row so dropdown sits top-right */}
+        <div className="flex items-center justify-between mb-8">
+          <Button variant="ghost" asChild>
+            <Link href={`/challenges/${id}`}>
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Challenge
+            </Link>
+          </Button>
+
+          {/* ← ADD: certificate dropdown — only shown to participants (in winners table) */}
+          {user && hasParticipated && (
+            <CertificateDropdown
+              studentName={currentUserName}
+              challengeTitle={challenge.title}
+              organizationName={orgName}
+              completionDate={awardDate}
+              isTop3={isTop3}
+              rank={isTop3 ? (currentUserWinner!.rank as 1 | 2 | 3) : undefined}
+              awardDate={awardDate}
+            />
+          )}
+        </div>
+
+        {/* ===== EVERYTHING BELOW IS 100% ORIGINAL — NOT TOUCHED ===== */}
 
         {/* Hero header */}
         <div className="text-center mb-16 space-y-2">
@@ -252,9 +288,7 @@ export default async function ChallengeResultsPage({
           })}
         </div>
 
-        {/* Full Leaderboard — sourced from winnersWithScore (winners table) instead of
-            allParticipants (challenge_participants) to bypass RLS that blocks students
-            from seeing other participants' rows. */}
+        {/* Full Leaderboard */}
         {winnersWithScore.length > 0 && (
           <div>
             <div className="flex items-center gap-3 mb-4">
