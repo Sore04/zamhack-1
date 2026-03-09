@@ -103,26 +103,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true }, { status: 200 })
   }
 
-  // ── 4. Extract Data from Payload ──────────────────────────────────────────
-  const checkoutSession  = payload?.data?.attributes?.data
-  const sessionId        = checkoutSession?.id
-  const metadata         = checkoutSession?.attributes?.metadata
-  const paymentIntentId  = checkoutSession?.attributes?.payment_intent?.id ?? null
+// ── 4. Extract Data from Payload ──────────────────────────────────────────
+  // Log the full payload structure so we can see exactly what PayMongo sends
+  console.log("📦 Full payload:", JSON.stringify(payload, null, 2))
 
+  const eventData       = payload?.data?.attributes?.data
+  const sessionId       = eventData?.id
+  const sessionAttrs    = eventData?.attributes
+  const metadata        = sessionAttrs?.metadata
+  const paymentIntentId = sessionAttrs?.payment_intent?.id ?? null
+
+  // Try multiple paths since PayMongo's structure can vary
   const challengeId = metadata?.challenge_id
-  const userId      = metadata?.user_id
+    ?? payload?.data?.attributes?.data?.attributes?.metadata?.challenge_id
+    ?? null
 
-  if (!sessionId || !challengeId || !userId) {
-    console.error("❌ Missing required fields in webhook payload:", {
-      sessionId,
-      challengeId,
-      userId,
-    })
-    return NextResponse.json(
-      { error: "Missing required fields in payload." },
-      { status: 400 }
-    )
-  }
+  const userId = metadata?.user_id
+    ?? payload?.data?.attributes?.data?.attributes?.metadata?.user_id
+    ?? null
+
+  console.log("🔍 Extracted:", { sessionId, challengeId, userId, metadata })
 
   // ── 5. Initialize Supabase ─────────────────────────────────────────────────
   const supabase = await createClient()
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
       .insert({
         user_id: userId,
         challenge_id: challengeId,
-        amount: checkoutSession?.attributes?.line_items?.[0]?.amount ?? 0,
+        amount: sessionAttrs?.line_items?.[0]?.amount ?? 0,
         currency: "PHP",
         status: "paid",
         provider: "paymongo",
