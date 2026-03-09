@@ -145,12 +145,13 @@ export function LandingPage() {
 
             {/* Mobile Menu Button */}
             <button
-              id="mobile-menu-btn"
-              className="lg:hidden p-2 rounded-lg hover:bg-navy/5 transition-colors"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
-              <i className={`fa-solid ${mobileMenuOpen ? "fa-xmark" : "fa-bars"} text-xl`}></i>
-            </button>
+  id="mobile-menu-btn"
+  className="lg:hidden p-2 rounded-lg hover:bg-navy/5 transition-colors"
+  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+  aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}  // ← add this
+>
+  <i className={`fa-solid ${mobileMenuOpen ? "fa-xmark" : "fa-bars"} text-xl`} aria-hidden="true"></i>
+</button>
           </div>
         </div>
 
