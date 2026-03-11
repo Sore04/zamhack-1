@@ -16,6 +16,7 @@ import {
   BookOpen,
 } from "lucide-react"
 import type { StudentWithStats } from "./page"
+import { MessageModal } from "./message-modal"
 
 interface TalentGridProps {
   students: StudentWithStats[]
@@ -55,6 +56,9 @@ export function TalentGrid({ students }: TalentGridProps) {
   const [filterExperience, setFilterExperience] = useState<"all" | "experienced" | "active" | "new">("all")
   const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
+
+  // Messaging state
+  const [messagingStudent, setMessagingStudent] = useState<StudentWithStats | null>(null)
 
   const filtered = useMemo(() => {
     let list = [...students]
@@ -121,32 +125,32 @@ export function TalentGrid({ students }: TalentGridProps) {
           />
         </div>
 
-      {/* Filter toggle */}
-      <button
-        type="button"
-        onClick={() => setShowFilters((v) => !v)}
-        aria-label={showFilters ? "Hide filters" : "Show filters"}
-        className="cp-btn cp-btn-ghost"
-        style={{
-          gap: "0.5rem",
-          borderColor: activeFiltersCount > 0 ? "var(--cp-coral)"      : undefined,
-          color:       activeFiltersCount > 0 ? "var(--cp-coral-dark)" : undefined,
-        } as CSSProperties}
-      >
-        <SlidersHorizontal style={{ width: "1rem", height: "1rem" }} />
-        Filters
-        {activeFiltersCount > 0 && (
-          <span style={{
-            minWidth: "1.25rem", height: "1.25rem", borderRadius: "99px",
-            background: "var(--cp-coral)", color: "white",
-            fontSize: "0.6875rem", fontWeight: 700,
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            padding: "0 0.3rem",
-          }}>
-            {activeFiltersCount}
-          </span>
-        )}
-      </button>
+        {/* Filter toggle */}
+        <button
+          type="button"
+          onClick={() => setShowFilters((v) => !v)}
+          aria-label={showFilters ? "Hide filters" : "Show filters"}
+          className="cp-btn cp-btn-ghost"
+          style={{
+            gap: "0.5rem",
+            borderColor: activeFiltersCount > 0 ? "var(--cp-coral)"      : undefined,
+            color:       activeFiltersCount > 0 ? "var(--cp-coral-dark)" : undefined,
+          } as CSSProperties}
+        >
+          <SlidersHorizontal style={{ width: "1rem", height: "1rem" }} />
+          Filters
+          {activeFiltersCount > 0 && (
+            <span style={{
+              minWidth: "1.25rem", height: "1.25rem", borderRadius: "99px",
+              background: "var(--cp-coral)", color: "white",
+              fontSize: "0.6875rem", fontWeight: 700,
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              padding: "0 0.3rem",
+            }}>
+              {activeFiltersCount}
+            </span>
+          )}
+        </button>
 
         {/* Sort */}
         <label htmlFor="talent-sort" style={{ display: "none" }}>Sort students</label>
@@ -307,67 +311,52 @@ export function TalentGrid({ students }: TalentGridProps) {
                         src={student.avatar_url}
                         alt={name}
                         style={{
-                          width: "3rem", height: "3rem",
-                          borderRadius: "50%", objectFit: "cover",
-                          flexShrink: 0, border: "2px solid var(--cp-border)",
+                          width: "3rem", height: "3rem", borderRadius: "50%",
+                          objectFit: "cover", flexShrink: 0,
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
                         }}
                       />
                     ) : (
-                      <div
-                        aria-hidden="true"
-                        style={{
-                          width: "3rem", height: "3rem",
-                          borderRadius: "50%", background: gradient,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          color: "white", fontWeight: 800, fontSize: "1rem",
-                          flexShrink: 0, letterSpacing: "-0.02em",
-                        }}
-                      >
+                      <div style={{
+                        width: "3rem", height: "3rem", borderRadius: "50%",
+                        background: gradient, flexShrink: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: "1rem", fontWeight: 700, color: "white",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                      }}>
                         {initials}
                       </div>
                     )}
 
-                    <div style={{ overflow: "hidden", flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{
                         fontWeight: 700, fontSize: "0.9375rem",
-                        color: "var(--cp-navy)", letterSpacing: "-0.01em",
-                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                        color: "var(--cp-navy)", lineHeight: 1.2,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                       }}>
                         {name}
                       </p>
                       {headline && (
                         <p style={{
                           fontSize: "0.75rem", color: "var(--cp-text-muted)",
-                          marginTop: "0.125rem",
-                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                          marginTop: "0.2rem", lineHeight: 1.3,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         }}>
+                          <GraduationCap style={{ width: "0.75rem", height: "0.75rem", display: "inline", marginRight: "0.25rem", verticalAlign: "middle" }} />
                           {headline}
                         </p>
                       )}
                     </div>
-
-                    {hasExperience && (
-                      <span style={{
-                        flexShrink: 0,
-                        display: "inline-flex", alignItems: "center", gap: "0.25rem",
-                        padding: "0.2rem 0.5rem", borderRadius: "99px",
-                        background: "rgba(34,197,94,0.10)", color: "#166534",
-                        fontSize: "0.6875rem", fontWeight: 700,
-                      }}>
-                        <Trophy style={{ width: "0.625rem", height: "0.625rem" }} />
-                        Verified
-                      </span>
-                    )}
                   </div>
 
                   {/* Bio */}
                   {student.bio && (
                     <p style={{
                       fontSize: "0.8125rem", color: "var(--cp-text-secondary)",
-                      lineHeight: 1.6,
+                      lineHeight: 1.55,
                       display: "-webkit-box",
                       WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical" as const,
+                      WebkitBoxOrient: "vertical",
                       overflow: "hidden",
                     }}>
                       {student.bio}
@@ -375,97 +364,65 @@ export function TalentGrid({ students }: TalentGridProps) {
                   )}
 
                   {/* Stats */}
-                  <div style={{ display: "flex", gap: "0.5rem" }}>
-                    <div style={{
-                      flex: 1, background: "var(--cp-surface)",
-                      borderRadius: "var(--cp-radius-md, 12px)",
-                      padding: "0.625rem 0.75rem", textAlign: "center",
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                      padding: "0.25rem 0.625rem",
+                      borderRadius: "99px",
+                      fontSize: "0.75rem", fontWeight: 600,
+                      background: hasExperience ? "var(--cp-coral-muted)" : "var(--cp-border)",
+                      color: hasExperience ? "var(--cp-coral-dark)" : "var(--cp-text-muted)",
                     }}>
-                      <p style={{ fontWeight: 800, fontSize: "1.125rem", color: "var(--cp-coral-dark)", letterSpacing: "-0.03em", lineHeight: 1 }}>
-                        {student.completedChallenges}
-                      </p>
-                      <p style={{ fontSize: "0.6875rem", color: "var(--cp-text-muted)", fontWeight: 500, marginTop: "0.2rem" }}>
-                        Completed
-                      </p>
-                    </div>
-                    <div style={{
-                      flex: 1, background: "var(--cp-surface)",
-                      borderRadius: "var(--cp-radius-md, 12px)",
-                      padding: "0.625rem 0.75rem", textAlign: "center",
-                    }}>
-                      <p style={{ fontWeight: 800, fontSize: "1.125rem", color: "var(--cp-navy)", letterSpacing: "-0.03em", lineHeight: 1 }}>
-                        {student.activeChallenges}
-                      </p>
-                      <p style={{ fontSize: "0.6875rem", color: "var(--cp-text-muted)", fontWeight: 500, marginTop: "0.2rem" }}>
-                        Active
-                      </p>
-                    </div>
-                    {student.graduation_year && (
-                      <div style={{
-                        flex: 1, background: "var(--cp-surface)",
-                        borderRadius: "var(--cp-radius-md, 12px)",
-                        padding: "0.625rem 0.75rem", textAlign: "center",
+                      <Trophy style={{ width: "0.7rem", height: "0.7rem" }} />
+                      {student.completedChallenges} completed
+                    </span>
+
+                    {student.activeChallenges > 0 && (
+                      <span style={{
+                        display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                        padding: "0.25rem 0.625rem",
+                        borderRadius: "99px",
+                        fontSize: "0.75rem", fontWeight: 600,
+                        background: "rgba(99,102,241,0.1)",
+                        color: "#4F46E5",
                       }}>
-                        <p style={{ fontWeight: 800, fontSize: "1.125rem", color: "var(--cp-navy)", letterSpacing: "-0.03em", lineHeight: 1 }}>
-                          {student.graduation_year}
-                        </p>
-                        <p style={{ fontSize: "0.6875rem", color: "var(--cp-text-muted)", fontWeight: 500, marginTop: "0.2rem" }}>
-                          Grad Year
-                        </p>
-                      </div>
+                        <BookOpen style={{ width: "0.7rem", height: "0.7rem" }} />
+                        {student.activeChallenges} active
+                      </span>
                     )}
                   </div>
+                </div>
 
-                  {/* Education chips */}
-                  {(student.university || student.degree) && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
-                      {student.university && (
-                        <span style={{
-                          display: "inline-flex", alignItems: "center", gap: "0.3rem",
-                          padding: "0.25rem 0.625rem",
-                          background: "var(--cp-navy-muted)", color: "var(--cp-navy)",
-                          borderRadius: "var(--cp-radius-sm, 8px)",
-                          fontSize: "0.72rem", fontWeight: 600,
-                        }}>
-                          <GraduationCap style={{ width: "0.75rem", height: "0.75rem" }} />
-                          {student.university}
-                        </span>
-                      )}
-                      {student.degree && (
-                        <span style={{
-                          display: "inline-flex", alignItems: "center", gap: "0.3rem",
-                          padding: "0.25rem 0.625rem",
-                          background: "var(--cp-coral-muted)", color: "var(--cp-coral-dark)",
-                          borderRadius: "var(--cp-radius-sm, 8px)",
-                          fontSize: "0.72rem", fontWeight: 600,
-                        }}>
-                          <BookOpen style={{ width: "0.75rem", height: "0.75rem" }} />
-                          {student.degree}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  <div style={{ flex: 1 }} />
-
-                  {/* Actions */}
-                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.25rem" }}>
-                    <Link
-                      href={`/profiles/${student.id}`}
-                      className="cp-btn cp-btn-primary cp-btn-sm"
-                      style={{ flex: 1, justifyContent: "center" }}
-                    >
-                      <ExternalLink style={{ width: "0.875rem", height: "0.875rem" }} />
-                      View Profile
-                    </Link>
-                    <Link
-                      href={`/company/messages?student=${student.id}`}
-                      className="cp-btn cp-btn-ghost cp-btn-sm cp-btn-icon"
-                      aria-label={`Message ${name}`}
-                    >
-                      <MessageCircle style={{ width: "0.875rem", height: "0.875rem" }} />
-                    </Link>
-                  </div>
+                {/* Footer Actions */}
+                <div style={{
+                  padding: "0.875rem 1.25rem",
+                  borderTop: "1px solid var(--cp-border)",
+                  display: "flex",
+                  gap: "0.5rem",
+                  background: "var(--cp-background, #fafafa)",
+                }}>
+                  <Link
+                    href={`/company/talent/${student.id}`}
+                    className="cp-btn cp-btn-ghost cp-btn-sm"
+                    style={{ flex: 1, justifyContent: "center" }}
+                  >
+                    <ExternalLink style={{ width: "0.875rem", height: "0.875rem" }} />
+                    View Profile
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setMessagingStudent(student)}
+                    className="cp-btn cp-btn-primary cp-btn-sm"
+                    aria-label={`Message ${name}`}
+                    title={`Send message to ${name}`}
+                    style={{
+                      gap: "0.375rem",
+                      paddingInline: "0.875rem",
+                    }}
+                  >
+                    <MessageCircle style={{ width: "0.875rem", height: "0.875rem" }} />
+                    Message
+                  </button>
                 </div>
               </div>
             )
@@ -572,6 +529,14 @@ export function TalentGrid({ students }: TalentGridProps) {
         @media (max-width: 1024px) { .talent-grid { grid-template-columns: repeat(2, 1fr) !important; } }
         @media (max-width: 640px)  { .talent-grid { grid-template-columns: 1fr !important; } }
       `}</style>
+
+      {/* ── Message Modal ── */}
+      {messagingStudent && (
+        <MessageModal
+          student={messagingStudent}
+          onClose={() => setMessagingStudent(null)}
+        />
+      )}
     </div>
   )
 }
