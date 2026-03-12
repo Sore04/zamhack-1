@@ -1,5 +1,4 @@
 import { createClient } from "@/utils/supabase/server"
-import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import { redirect } from "next/navigation"
 import { Database } from "@/types/supabase"
 import { Users } from "lucide-react"
@@ -12,15 +11,8 @@ export interface StudentWithStats extends Profile {
   activeChallenges: number
 }
 
-function createServiceClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
-
 const COMPLETED_STATUSES = new Set(["completed", "closed"])
-const INACTIVE_STATUSES = new Set(["cancelled", "rejected", "draft", "pending_approval"])
+const INACTIVE_STATUSES  = new Set(["cancelled", "rejected", "draft", "pending_approval"])
 
 function classifyStatus(status: string): "completed" | "active" | "none" {
   if (COMPLETED_STATUSES.has(status)) return "completed"
@@ -54,46 +46,18 @@ async function getTalentData(): Promise<StudentWithStats[]> {
 
   const studentIds = students.map((s) => s.id)
 
-  // ── DEBUG: Find Harry Potter's ID ──
-  const harryPotter = students.find(
-    (s) => `${s.first_name} ${s.last_name}`.toLowerCase().includes("harry")
-  )
-  console.log("🔍 [TALENT DEBUG] Harry Potter profile:", {
-    id: harryPotter?.id,
-    name: `${harryPotter?.first_name} ${harryPotter?.last_name}`,
-  })
-
-  // ── Step 1a: Direct participations ──
-  const { data: directParticipations, error: dpError } = await supabase
+  // ── Direct participations ──
+  const { data: directParticipations } = await supabase
     .from("challenge_participants")
     .select("user_id, challenge_id")
     .in("user_id", studentIds)
     .not("challenge_id", "is", null)
 
-  console.log("🔍 [TALENT DEBUG] directParticipations error:", dpError)
-  console.log("🔍 [TALENT DEBUG] directParticipations count:", directParticipations?.length)
-
-  if (harryPotter) {
-    const harryDirect = (directParticipations || []).filter(
-      (p) => p.user_id === harryPotter.id
-    )
-    console.log("🔍 [TALENT DEBUG] Harry direct participations:", harryDirect)
-  }
-
-  // ── Step 1b: Team memberships ──
-  const { data: teamMemberships, error: tmError } = await supabase
+  // ── Team-based participations ──
+  const { data: teamMemberships } = await supabase
     .from("team_members")
     .select("profile_id, team_id")
     .in("profile_id", studentIds)
-
-  console.log("🔍 [TALENT DEBUG] teamMemberships error:", tmError)
-
-  if (harryPotter) {
-    const harryTeams = (teamMemberships || []).filter(
-      (tm) => tm.profile_id === harryPotter.id
-    )
-    console.log("🔍 [TALENT DEBUG] Harry team memberships:", harryTeams)
-  }
 
   const teamIds = [
     ...new Set(
@@ -101,28 +65,35 @@ async function getTalentData(): Promise<StudentWithStats[]> {
     ),
   ]
 
-  let teamParticipations: { team_id: string | null; challenge_id: string | null }[] = []
+  const leaderByTeam = new Map<string, string>()
   if (teamIds.length > 0) {
-    const { data, error: tpError } = await supabase
+    const { data: teamsData } = await supabase
+      .from("teams")
+      .select("id, leader_id")
+      .in("id", teamIds)
+    for (const t of teamsData || []) {
+      if (t.id && t.leader_id) leaderByTeam.set(t.id, t.leader_id)
+    }
+  }
+
+  const leaderIds = [...new Set([...leaderByTeam.values()])]
+  const leaderChallengeMap = new Map<string, string[]>()
+
+  if (leaderIds.length > 0) {
+    const { data: leaderParticipations } = await supabase
       .from("challenge_participants")
-      .select("team_id, challenge_id")
-      .in("team_id", teamIds)
+      .select("user_id, challenge_id")
+      .in("user_id", leaderIds)
       .not("challenge_id", "is", null)
-
-    console.log("🔍 [TALENT DEBUG] teamParticipations error:", tpError)
-    console.log("🔍 [TALENT DEBUG] teamParticipations:", data)
-    teamParticipations = data || []
+    for (const lp of leaderParticipations || []) {
+      if (!lp.user_id || !lp.challenge_id) continue
+      const existing = leaderChallengeMap.get(lp.user_id) || []
+      existing.push(lp.challenge_id)
+      leaderChallengeMap.set(lp.user_id, existing)
+    }
   }
 
-  // Build maps
-  const teamChallengeMap = new Map<string, string[]>()
-  for (const tp of teamParticipations) {
-    if (!tp.team_id || !tp.challenge_id) continue
-    const existing = teamChallengeMap.get(tp.team_id) || []
-    existing.push(tp.challenge_id)
-    teamChallengeMap.set(tp.team_id, existing)
-  }
-
+  // ── Build per-student challenge set ──
   const studentChallengeMap = new Map<string, Set<string>>()
 
   for (const p of directParticipations || []) {
@@ -134,51 +105,33 @@ async function getTalentData(): Promise<StudentWithStats[]> {
 
   for (const tm of teamMemberships || []) {
     if (!tm.profile_id || !tm.team_id) continue
-    const challengeIds = teamChallengeMap.get(tm.team_id) || []
+    const leaderId = leaderByTeam.get(tm.team_id)
+    if (!leaderId) continue
+    const leaderChallenges = leaderChallengeMap.get(leaderId) || []
     const set = studentChallengeMap.get(tm.profile_id) || new Set<string>()
-    for (const cid of challengeIds) set.add(cid)
+    for (const cid of leaderChallenges) set.add(cid)
     studentChallengeMap.set(tm.profile_id, set)
   }
 
-  if (harryPotter) {
-    const harryChallenges = studentChallengeMap.get(harryPotter.id)
-    console.log("🔍 [TALENT DEBUG] Harry combined challenge IDs:", [...(harryChallenges || [])])
-  }
-
-  // ── Step 2: Fetch statuses via service role ──
+  // ── Fetch challenge statuses ──
   const allChallengeIds = [
-    ...new Set([...studentChallengeMap.values()].flatMap((set) => [...set])),
+    ...new Set([...studentChallengeMap.values()].flatMap((s) => [...s])),
   ]
-
-  console.log("🔍 [TALENT DEBUG] Total unique challenge IDs to fetch:", allChallengeIds.length)
 
   const challengeStatusMap = new Map<string, string>()
   if (allChallengeIds.length > 0) {
-    const adminSupabase = createServiceClient()
-    const { data: challengeData, error: cdError } = await adminSupabase
+    const { data: challengeData } = await supabase
       .from("challenges")
       .select("id, status")
       .in("id", allChallengeIds)
-
-    console.log("🔍 [TALENT DEBUG] challenge status fetch error:", cdError)
-    console.log("🔍 [TALENT DEBUG] challenges fetched:", challengeData?.length)
-    console.log("🔍 [TALENT DEBUG] challenge statuses:", challengeData?.map(c => ({ id: c.id, status: c.status })))
-
     for (const c of challengeData || []) {
       if (c.id && c.status) challengeStatusMap.set(c.id, c.status)
     }
   }
 
-  if (harryPotter) {
-    const harryChallenges = studentChallengeMap.get(harryPotter.id) || new Set()
-    for (const cid of harryChallenges) {
-      console.log(`🔍 [TALENT DEBUG] Harry challenge ${cid} → status: ${challengeStatusMap.get(cid)} → classify: ${challengeStatusMap.has(cid) ? classifyStatus(challengeStatusMap.get(cid)!) : "NOT FOUND"}`)
-    }
-  }
-
-  // ── Step 3: Count ──
+  // ── Count per student ──
   const completedMap = new Map<string, number>()
-  const activeMap = new Map<string, number>()
+  const activeMap    = new Map<string, number>()
 
   for (const [studentId, challengeIds] of studentChallengeMap.entries()) {
     for (const challengeId of challengeIds) {
@@ -193,14 +146,10 @@ async function getTalentData(): Promise<StudentWithStats[]> {
     }
   }
 
-  if (harryPotter) {
-    console.log("🔍 [TALENT DEBUG] Harry FINAL → completed:", completedMap.get(harryPotter.id) || 0, "active:", activeMap.get(harryPotter.id) || 0)
-  }
-
   return (students as Profile[]).map((s) => ({
     ...s,
     completedChallenges: completedMap.get(s.id) || 0,
-    activeChallenges: activeMap.get(s.id) || 0,
+    activeChallenges:    activeMap.get(s.id)    || 0,
   }))
 }
 
@@ -218,28 +167,20 @@ export default async function TalentPage() {
 
       <div className="cp-grid-4">
         <div className="cp-stat-card">
-          <div className="cp-stat-icon">
-            <Users className="w-5 h-5" />
-          </div>
+          <div className="cp-stat-icon"><Users className="w-5 h-5" /></div>
           <p className="cp-stat-value">{students.length}</p>
           <p className="cp-stat-label">Total Students</p>
         </div>
         <div className="cp-stat-card primary">
-          <p className="cp-stat-value">
-            {students.filter((s) => s.completedChallenges > 0).length}
-          </p>
+          <p className="cp-stat-value">{students.filter((s) => s.completedChallenges > 0).length}</p>
           <p className="cp-stat-label">With Experience</p>
         </div>
         <div className="cp-stat-card">
-          <p className="cp-stat-value">
-            {students.filter((s) => s.activeChallenges > 0).length}
-          </p>
+          <p className="cp-stat-value">{students.filter((s) => s.activeChallenges > 0).length}</p>
           <p className="cp-stat-label">Currently Active</p>
         </div>
         <div className="cp-stat-card navy">
-          <p className="cp-stat-value">
-            {students.filter((s) => s.bio).length}
-          </p>
+          <p className="cp-stat-value">{students.filter((s) => s.bio).length}</p>
           <p className="cp-stat-label">Full Profiles</p>
         </div>
       </div>
@@ -247,13 +188,9 @@ export default async function TalentPage() {
       {students.length === 0 ? (
         <div className="cp-card">
           <div className="cp-empty-state">
-            <div className="cp-empty-icon">
-              <Users style={{ width: "1.75rem", height: "1.75rem" }} />
-            </div>
+            <div className="cp-empty-icon"><Users style={{ width: "1.75rem", height: "1.75rem" }} /></div>
             <p className="cp-empty-title">No students yet</p>
-            <p className="cp-empty-desc">
-              Students will appear here once they register on the platform.
-            </p>
+            <p className="cp-empty-desc">Students will appear here once they register on the platform.</p>
           </div>
         </div>
       ) : (
