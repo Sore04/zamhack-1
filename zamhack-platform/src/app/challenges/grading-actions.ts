@@ -12,7 +12,7 @@ export async function submitEvaluation(
   rubricScores: { rubric_id: string; score: number }[],
   feedback: string,
   isDraft: boolean,
-  directScore?: number  // NEW: used when no rubrics are defined
+  directScore?: number
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
 
@@ -77,8 +77,6 @@ export async function submitEvaluation(
     return { success: false, error: "Unauthorized: You can only evaluate submissions for your organization's challenges" }
   }
 
-  // If directScore is provided (no rubrics), use it directly.
-  // Otherwise sum up rubric scores.
   const totalScore = directScore !== undefined
     ? directScore
     : rubricScores.reduce((sum, item) => sum + item.score, 0)
@@ -123,7 +121,6 @@ export async function submitEvaluation(
     return { success: false, error: error.error }
   }
 
-  // Save detailed rubric scores (only if rubrics were used)
   await supabase
     .from("scores" as any)
     .delete()
@@ -148,5 +145,114 @@ export async function submitEvaluation(
 
   revalidatePath(`/company/challenges/${milestone.challenge_id}`)
 
+  return { success: true }
+}
+
+// ─── Rubric Management ────────────────────────────────────────────────────────
+
+async function getCompanyChallenge(challengeId: string) {
+  const supabase = await createClient()
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) return { supabase, user: null, error: "Not authenticated" }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role, organization_id")
+    .eq("id", user.id)
+    .single()
+
+  if (profileError || !profile) return { supabase, user, error: "Profile not found" }
+  if (profile.role !== "company_admin" && profile.role !== "company_member") {
+    return { supabase, user, error: "Unauthorized" }
+  }
+
+  const { data: challenge, error: challengeError } = await supabase
+    .from("challenges")
+    .select("id, organization_id")
+    .eq("id", challengeId)
+    .single()
+
+  if (challengeError || !challenge) return { supabase, user, error: "Challenge not found" }
+  if (challenge.organization_id !== profile.organization_id) {
+    return { supabase, user, error: "Unauthorized: This challenge does not belong to your organization" }
+  }
+
+  return { supabase, user, error: null }
+}
+
+export async function saveRubric(
+  challengeId: string,
+  criteriaName: string,
+  maxPoints: number,
+  rubricId?: string
+): Promise<{ success: boolean; error?: string; id?: string }> {
+  const { supabase, error: authError } = await getCompanyChallenge(challengeId)
+  if (authError) return { success: false, error: authError }
+
+  const trimmedName = criteriaName.trim()
+  if (!trimmedName) return { success: false, error: "Criteria name cannot be empty" }
+  if (maxPoints < 1 || maxPoints > 1000) return { success: false, error: "Max points must be between 1 and 1000" }
+
+  if (rubricId) {
+    // Update existing rubric — verify it belongs to this challenge first
+    const { data: existing, error: fetchError } = await supabase
+      .from("rubrics")
+      .select("id, challenge_id")
+      .eq("id", rubricId)
+      .single()
+
+    if (fetchError || !existing) return { success: false, error: "Rubric not found" }
+    if (existing.challenge_id !== challengeId) return { success: false, error: "Unauthorized" }
+
+    const { error: updateError } = await supabase
+      .from("rubrics")
+      .update({ criteria_name: trimmedName, max_points: maxPoints })
+      .eq("id", rubricId)
+
+    if (updateError) return { success: false, error: updateError.message }
+
+    revalidatePath(`/company/challenges/${challengeId}`)
+    return { success: true, id: rubricId }
+  }
+
+  // Insert new rubric
+  const { data: newRubric, error: insertError } = await supabase
+    .from("rubrics")
+    .insert({ challenge_id: challengeId, criteria_name: trimmedName, max_points: maxPoints })
+    .select("id")
+    .single()
+
+  if (insertError || !newRubric) return { success: false, error: insertError?.message || "Failed to create rubric" }
+
+  revalidatePath(`/company/challenges/${challengeId}`)
+  return { success: true, id: newRubric.id }
+}
+
+export async function deleteRubric(
+  rubricId: string,
+  challengeId: string
+): Promise<{ success: boolean; error?: string }> {
+  const { supabase, error: authError } = await getCompanyChallenge(challengeId)
+  if (authError) return { success: false, error: authError }
+
+  // Verify rubric belongs to this challenge
+  const { data: existing, error: fetchError } = await supabase
+    .from("rubrics")
+    .select("id, challenge_id")
+    .eq("id", rubricId)
+    .single()
+
+  if (fetchError || !existing) return { success: false, error: "Rubric not found" }
+  if (existing.challenge_id !== challengeId) return { success: false, error: "Unauthorized" }
+
+  const { error: deleteError } = await supabase
+    .from("rubrics")
+    .delete()
+    .eq("id", rubricId)
+
+  if (deleteError) return { success: false, error: deleteError.message }
+
+  revalidatePath(`/company/challenges/${challengeId}`)
   return { success: true }
 }

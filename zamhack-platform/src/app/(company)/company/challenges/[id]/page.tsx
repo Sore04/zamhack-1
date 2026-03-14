@@ -10,8 +10,8 @@ import Link from "next/link"
 import { Lock } from "lucide-react"
 import { submitChallengeForApproval } from "@/app/challenges/actions"
 import { CloseChallengeButton } from "@/components/challenges/close-challenge-button"
-// --- NEW IMPORT ---
 import { RecalculateWinnersButton } from "@/components/challenges/recalculate-winners-button"
+import { RubricManager } from "@/components/challenges/rubric-manager"
 
 type Challenge = Database["public"]["Tables"]["challenges"]["Row"]
 type Participant = Database["public"]["Tables"]["challenge_participants"]["Row"]
@@ -19,6 +19,7 @@ type Profile = Database["public"]["Tables"]["profiles"]["Row"]
 type Milestone = Database["public"]["Tables"]["milestones"]["Row"]
 type Submission = Database["public"]["Tables"]["submissions"]["Row"]
 type Evaluation = Database["public"]["Tables"]["evaluations"]["Row"]
+type Rubric = Database["public"]["Tables"]["rubrics"]["Row"]
 
 interface ParticipantWithProfile extends Participant {
   profile: Profile | null
@@ -35,6 +36,7 @@ interface ChallengeManagementData {
   participants: ParticipantWithProfile[]
   submissions: SubmissionWithDetails[]
   milestones: Milestone[]
+  rubrics: Rubric[]
   stats: {
     totalParticipants: number
     totalSubmissions: number
@@ -78,7 +80,6 @@ async function getChallengeManagementData(
     redirect("/dashboard")
   }
 
-  // Fetch challenge and verify ownership
   const { data: challenge, error: challengeError } = await supabase
     .from("challenges")
     .select("*")
@@ -89,12 +90,10 @@ async function getChallengeManagementData(
     return null
   }
 
-  // Security check: verify user's organization owns this challenge
   if (challenge.organization_id !== profile.organization_id) {
     redirect("/company/dashboard")
   }
 
-  // Fetch milestones
   const { data: milestones, error: milestonesError } = await supabase
     .from("milestones")
     .select("*")
@@ -107,7 +106,6 @@ async function getChallengeManagementData(
 
   const milestonesList = milestones || []
 
-  // Fetch participants with profiles
   const { data: participants, error: participantsError } = await supabase
     .from("challenge_participants")
     .select("*")
@@ -120,7 +118,6 @@ async function getChallengeManagementData(
   const participantsList = participants || []
   const participantIds = participantsList.map((p) => p.id)
 
-  // Fetch profiles for participants
   const userIds = participantsList
     .map((p) => p.user_id)
     .filter(Boolean) as string[]
@@ -137,7 +134,6 @@ async function getChallengeManagementData(
     }
   }
 
-  // Combine participants with profiles
   const participantsWithProfiles: ParticipantWithProfile[] = participantsList.map(
     (p) => ({
       ...p,
@@ -145,7 +141,6 @@ async function getChallengeManagementData(
     })
   )
 
-  // Fetch submissions
   let submissionsList: Submission[] = []
   if (participantIds.length > 0) {
     const { data: submissions, error: submissionsError } = await supabase
@@ -161,7 +156,6 @@ async function getChallengeManagementData(
     }
   }
 
-  // Fetch evaluations for submissions
   const submissionIds = submissionsList.map((s) => s.id)
   let evaluationsMap = new Map<string, Evaluation>()
   if (submissionIds.length > 0) {
@@ -180,15 +174,20 @@ async function getChallengeManagementData(
     }
   }
 
-  // Build milestone map
+  // Fetch rubrics
+  const { data: rubrics, error: rubricsError } = await supabase
+    .from("rubrics")
+    .select("*")
+    .eq("challenge_id", challengeId)
+    .order("created_at", { ascending: true })
+
+  if (rubricsError) {
+    console.error("Error fetching rubrics:", rubricsError)
+  }
+
   const milestoneMap = new Map(milestonesList.map((m) => [m.id, m]))
+  const participantMap = new Map(participantsWithProfiles.map((p) => [p.id, p]))
 
-  // Build participant map
-  const participantMap = new Map(
-    participantsWithProfiles.map((p) => [p.id, p])
-  )
-
-  // Combine submissions with related data
   const submissionsWithDetails: SubmissionWithDetails[] = submissionsList.map(
     (sub) => ({
       ...sub,
@@ -200,14 +199,12 @@ async function getChallengeManagementData(
     })
   )
 
-  // Calculate stats
   const totalParticipants = participantsList.length
   const totalSubmissions = submissionsList.length
   const pendingReviews = submissionsList.filter(
     (s) => !evaluationsMap.has(s.id)
   ).length
 
-  // Calculate average score
   const evaluatedSubmissions = submissionsList.filter((s) =>
     evaluationsMap.has(s.id)
   )
@@ -223,18 +220,14 @@ async function getChallengeManagementData(
       ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
       : null
 
-  // Calculate completion rate (participants who submitted at least one milestone)
   const participantsWithSubmissions = new Set(
     submissionsList.map((s) => s.participant_id).filter(Boolean)
   )
   const completionRate =
     totalParticipants > 0
-      ? Math.round(
-          (participantsWithSubmissions.size / totalParticipants) * 100
-        )
+      ? Math.round((participantsWithSubmissions.size / totalParticipants) * 100)
       : 0
 
-  // Calculate milestone progress
   const milestoneProgress = milestonesList.map((milestone) => {
     const milestoneSubmissions = submissionsList.filter(
       (s) => s.milestone_id === milestone.id
@@ -242,13 +235,7 @@ async function getChallengeManagementData(
     const completed = milestoneSubmissions.length
     const total = totalParticipants
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 0
-
-    return {
-      milestone,
-      completed,
-      total,
-      percentage,
-    }
+    return { milestone, completed, total, percentage }
   })
 
   return {
@@ -256,6 +243,7 @@ async function getChallengeManagementData(
     participants: participantsWithProfiles,
     submissions: submissionsWithDetails,
     milestones: milestonesList,
+    rubrics: rubrics || [],
     stats: {
       totalParticipants,
       totalSubmissions,
@@ -269,24 +257,15 @@ async function getChallengeManagementData(
 
 const getStatusBadgeVariant = (status: string | null) => {
   switch (status) {
-    case "approved":
-      return "success"
-    case "in_progress":
-      return "default"
-    case "under_review":
-      return "warning"
-    case "draft":
-      return "outline"
-    case "pending_approval":
-      return "warning"
-    case "completed":
-      return "success"
-    case "closed":
-      return "destructive"
-    case "cancelled":
-      return "destructive"
-    default:
-      return "outline"
+    case "approved":         return "success"
+    case "in_progress":      return "default"
+    case "under_review":     return "warning"
+    case "draft":            return "outline"
+    case "pending_approval": return "warning"
+    case "completed":        return "success"
+    case "closed":           return "destructive"
+    case "cancelled":        return "destructive"
+    default:                 return "outline"
   }
 }
 
@@ -304,9 +283,7 @@ const getParticipantName = (participant: ParticipantWithProfile) => {
   return "Unknown"
 }
 
-const getParticipantEmail = (participant: ParticipantWithProfile) => {
-  // Note: Email is not in profiles table, would need to join with auth.users
-  // For now, return a placeholder
+const getParticipantEmail = (_participant: ParticipantWithProfile) => {
   return "N/A"
 }
 
@@ -322,12 +299,10 @@ export default async function ChallengeManagementPage({
     redirect("/company/dashboard")
   }
 
-  const { challenge, participants, submissions, stats, milestoneProgress } =
-    data
+  const { challenge, participants, submissions, stats, milestoneProgress, rubrics } = data
 
   const isDraft = challenge.status === "draft"
-  // Check if the challenge is already in a closed state
-  const isClosed = challenge.status === 'closed' || challenge.status === 'completed'
+  const isClosed = challenge.status === "closed" || challenge.status === "completed"
 
   return (
     <div className="space-y-6 p-6">
@@ -343,9 +318,7 @@ export default async function ChallengeManagementPage({
           <p className="text-muted-foreground">{challenge.description}</p>
         </div>
         <div className="flex gap-2">
-          
-           {/* Submit for Approval Button */}
-           {isDraft && (
+          {isDraft && (
             <form
               action={async () => {
                 "use server"
@@ -358,23 +331,20 @@ export default async function ChallengeManagementPage({
             </form>
           )}
 
-          {/* Edit Button */}
           <Button variant="outline" asChild>
             <Link href={`/company/challenges/${id}/edit`}>Edit Challenge</Link>
           </Button>
-          
-          {/* Close / Recalculate Buttons */}
+
           {isClosed ? (
             <div className="flex flex-col gap-2">
               <Button variant="outline" disabled className="opacity-50">
                 <Lock className="mr-2 h-4 w-4" />
                 Challenge Closed
               </Button>
-              {/* --- NEW: Recalculate Winners Button --- */}
               <RecalculateWinnersButton challengeId={challenge.id} />
             </div>
           ) : (
-             <CloseChallengeButton challengeId={challenge.id} />
+            <CloseChallengeButton challengeId={challenge.id} />
           )}
         </div>
       </div>
@@ -389,29 +359,25 @@ export default async function ChallengeManagementPage({
           <TabsTrigger value="submissions">
             Submissions ({stats.totalSubmissions})
           </TabsTrigger>
+          <TabsTrigger value="scoring">
+            Scoring {rubrics.length > 0 && `(${rubrics.length})`}
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6 mt-6">
-          {/* Stats Cards */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Total Participants
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">Total Participants</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {stats.totalParticipants}
-                </div>
+                <div className="text-2xl font-bold">{stats.totalParticipants}</div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Total Submissions
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">Total Submissions</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{stats.totalSubmissions}</div>
@@ -419,9 +385,7 @@ export default async function ChallengeManagementPage({
             </Card>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Pending Reviews
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">Pending Reviews</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{stats.pendingReviews}</div>
@@ -439,7 +403,6 @@ export default async function ChallengeManagementPage({
             </Card>
           </div>
 
-          {/* Completion Rate */}
           <Card>
             <CardHeader>
               <CardTitle>Completion Rate</CardTitle>
@@ -455,7 +418,6 @@ export default async function ChallengeManagementPage({
             </CardContent>
           </Card>
 
-          {/* Milestone Progress */}
           <Card>
             <CardHeader>
               <CardTitle>Milestone Progress</CardTitle>
@@ -501,42 +463,23 @@ export default async function ChallengeManagementPage({
                     <table className="w-full caption-bottom text-sm">
                       <thead className="[&_tr]:border-b">
                         <tr className="border-b transition-colors hover:bg-muted/50">
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                            Name
-                          </th>
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                            Email
-                          </th>
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                            Status
-                          </th>
-                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
-                            Action
-                          </th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Name</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Email</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
+                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Action</th>
                         </tr>
                       </thead>
                       <tbody className="[&_tr:last-child]:border-0">
                         {participants.map((participant) => (
-                          <tr
-                            key={participant.id}
-                            className="border-b transition-colors hover:bg-muted/50"
-                          >
-                            <td className="p-4 align-middle font-medium">
-                              {getParticipantName(participant)}
-                            </td>
+                          <tr key={participant.id} className="border-b transition-colors hover:bg-muted/50">
+                            <td className="p-4 align-middle font-medium">{getParticipantName(participant)}</td>
+                            <td className="p-4 align-middle">{getParticipantEmail(participant)}</td>
                             <td className="p-4 align-middle">
-                              {getParticipantEmail(participant)}
-                            </td>
-                            <td className="p-4 align-middle">
-                              <Badge variant="outline">
-                                {participant.status || "active"}
-                              </Badge>
+                              <Badge variant="outline">{participant.status || "active"}</Badge>
                             </td>
                             <td className="p-4 align-middle text-right">
                               <Button size="sm" variant="outline" asChild>
-                                <Link
-                                  href={`/profiles/${participant.profile?.id || ""}`}
-                                >
+                                <Link href={`/profiles/${participant.profile?.id || ""}`}>
                                   View Profile
                                 </Link>
                               </Button>
@@ -566,54 +509,29 @@ export default async function ChallengeManagementPage({
                     <table className="w-full caption-bottom text-sm">
                       <thead className="[&_tr]:border-b">
                         <tr className="border-b transition-colors hover:bg-muted/50">
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                            Student
-                          </th>
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                            Milestone
-                          </th>
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                            Submitted Date
-                          </th>
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                            Status
-                          </th>
-                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
-                            Action
-                          </th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Student</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Milestone</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Submitted Date</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
+                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Action</th>
                         </tr>
                       </thead>
                       <tbody className="[&_tr:last-child]:border-0">
                         {submissions.map((submission) => (
-                          <tr
-                            key={submission.id}
-                            className="border-b transition-colors hover:bg-muted/50"
-                          >
+                          <tr key={submission.id} className="border-b transition-colors hover:bg-muted/50">
                             <td className="p-4 align-middle font-medium">
-                              {submission.participant
-                                ? getParticipantName(submission.participant)
-                                : "Unknown"}
+                              {submission.participant ? getParticipantName(submission.participant) : "Unknown"}
                             </td>
+                            <td className="p-4 align-middle">{submission.milestone?.title || "N/A"}</td>
+                            <td className="p-4 align-middle">{formatDate(submission.submitted_at)}</td>
                             <td className="p-4 align-middle">
-                              {submission.milestone?.title || "N/A"}
-                            </td>
-                            <td className="p-4 align-middle">
-                              {formatDate(submission.submitted_at)}
-                            </td>
-                            <td className="p-4 align-middle">
-                              <Badge
-                                variant={
-                                  submission.evaluation ? "success" : "warning"
-                                }
-                              >
+                              <Badge variant={submission.evaluation ? "success" : "warning"}>
                                 {submission.evaluation ? "Reviewed" : "Pending"}
                               </Badge>
                             </td>
                             <td className="p-4 align-middle text-right">
                               <Button size="sm" variant="outline" asChild>
-                                <Link
-                                  href={`/company/challenges/${id}/submissions/${submission.id}`}
-                                >
+                                <Link href={`/company/challenges/${id}/submissions/${submission.id}`}>
                                   Review
                                 </Link>
                               </Button>
@@ -627,6 +545,11 @@ export default async function ChallengeManagementPage({
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Scoring Tab */}
+        <TabsContent value="scoring" className="mt-6 max-w-2xl">
+          <RubricManager challengeId={challenge.id} initialRubrics={rubrics} />
         </TabsContent>
       </Tabs>
     </div>
