@@ -142,14 +142,12 @@ export function getFinalScore(input: ScoreInput): number | null {
  * Requires each evaluation to carry a reviewer_role field,
  * which should be joined from profiles when fetching evaluations.
  */
-export function splitEvaluationsByRole(
-  evaluations: Array<{
-    score: number | null
-    feedback: string | null
-    is_draft: boolean | null
-    reviewer_role: string | null
-  }>
-) {
+export function splitEvaluationsByRole<T extends {
+  score: number | null
+  feedback: string | null
+  is_draft: boolean | null
+  reviewer_role: string | null
+}>(evaluations: T[]) {
   const published = evaluations.filter(e => !e.is_draft)
 
   const companyEval = published.find(
