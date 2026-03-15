@@ -86,6 +86,7 @@ async function getChallenges(searchParams: {
     }
    }
 
+   
 
   // 7. Sort
   if (searchParams.sort === "closing_soon") {

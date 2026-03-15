@@ -228,6 +228,7 @@ export function ChallengeFilters() {
           )}
         </p>
 
+
         <div className="rounded-md border p-3">
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
             {INDUSTRIES.map((industry) => {
