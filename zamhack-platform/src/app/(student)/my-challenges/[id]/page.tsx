@@ -118,6 +118,7 @@ async function getChallengeProgress(
       .select("*, profiles(role)")
       .in("submission_id", submissionIds)
       .eq("is_draft", false)
+      .not("reviewer_id", "is", null)
 
     if (evaluationsError) {
       console.error("Error fetching evaluations:", evaluationsError)

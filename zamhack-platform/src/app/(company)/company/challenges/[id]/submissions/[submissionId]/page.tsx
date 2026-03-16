@@ -152,18 +152,24 @@ async function getSubmissionReviewData(
     rubrics = (fallbackRubrics as any[]) ?? []
   }
 
-  // Fetch existing evaluation (including drafts)
+  // Fetch the company reviewer's own evaluation only (not the auto-eval draft with reviewer_id=null)
   const { data: evaluation } = await supabase
     .from("evaluations")
     .select("*")
     .eq("submission_id", submissionId)
+    .eq("reviewer_id", user.id)
     .maybeSingle()
 
-  // Fetch detailed scores
-  const { data: scores } = await supabase
-    .from("scores")
-    .select("*")
-    .eq("submission_id", submissionId)
+  // Only fetch scores if the company reviewer has their own evaluation already.
+  // Auto-eval writes scores too, but we don't want those pre-filling the company form.
+  let scores: any[] = []
+  if (evaluation) {
+    const { data: existingScores } = await supabase
+      .from("scores")
+      .select("*")
+      .eq("submission_id", submissionId)
+    scores = existingScores || []
+  }
 
   return {
     submission,
@@ -173,7 +179,7 @@ async function getSubmissionReviewData(
     profile: profileData,
     evaluation: evaluation || null,
     rubrics: rubrics || [],
-    scores: scores || [],
+    scores,
   }
 }
 
