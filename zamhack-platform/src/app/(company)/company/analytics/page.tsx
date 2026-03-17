@@ -13,6 +13,7 @@ import {
   type WeeklySubmission,
   type DegreeSlice,
 } from "@/components/company/analytics-charts"
+import { ChallengePerformanceTable } from "@/components/company/challenge-performance-table"
 
 // ── Data Fetching ──────────────────────────────────────────────────────────
 
@@ -281,37 +282,7 @@ export default async function CompanyAnalyticsPage() {
             No challenge data yet.
           </p>
         ) : (
-          <div className="cp-table-wrapper">
-            <table className="cp-table">
-              <thead>
-                <tr>
-                  <th>Challenge</th>
-                  <th>Participants</th>
-                  <th>Submissions</th>
-                  <th>Avg Score</th>
-                  <th>Completion Rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {challengePerformance.map((c, i) => (
-                  <tr key={i}>
-                    <td>{c.title}</td>
-                    <td>{c.participants}</td>
-                    <td>{c.submissions}</td>
-                    <td>{c.avgScore !== null ? `${c.avgScore}/100` : "—"}</td>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ flex: 1, height: 6, background: "var(--cp-surface-2)", borderRadius: 99, overflow: "hidden" }}>
-                          <div style={{ width: `${c.completionRate}%`, height: "100%", background: "var(--cp-coral)", borderRadius: 99 }} />
-                        </div>
-                        <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--cp-navy)", minWidth: 36 }}>{c.completionRate}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ChallengePerformanceTable data={challengePerformance} />
         )}
       </Section>
 

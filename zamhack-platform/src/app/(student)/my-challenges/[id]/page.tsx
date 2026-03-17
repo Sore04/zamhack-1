@@ -118,6 +118,7 @@ async function getChallengeProgress(
       .select("*, profiles(role)")
       .in("submission_id", submissionIds)
       .eq("is_draft", false)
+      .not("reviewer_id", "is", null)
 
     if (evaluationsError) {
       console.error("Error fetching evaluations:", evaluationsError)
@@ -205,6 +206,15 @@ export default async function ChallengeProgressPage({
       const existing = evaluationsBySubmission.get(e.submission_id) || []
       evaluationsBySubmission.set(e.submission_id, [...existing, e])
     }
+  })
+
+  // Group rubrics by milestone_id; null key = challenge-level fallback
+  const milestoneRubricMap = new Map<string | null, Rubric[]>()
+  rubrics.forEach((r) => {
+    const key = (r as any).milestone_id ?? null
+    const arr = milestoneRubricMap.get(key) ?? []
+    arr.push(r)
+    milestoneRubricMap.set(key, arr)
   })
 
   const scoringMode = ((challenge as any).scoring_mode || "company_only") as ScoringMode
@@ -301,9 +311,6 @@ export default async function ChallengeProgressPage({
         </CardContent>
       </Card>
 
-      {/* Scoring Criteria — visible to students at all times */}
-      <RubricCriteriaCard rubrics={rubrics} />
-
       {/* Milestones Feed */}
       <div className="space-y-4">
         <h2 className="text-2xl font-semibold tracking-tight">Milestones</h2>
@@ -383,6 +390,17 @@ export default async function ChallengeProgressPage({
                       </Badge>
                     )}
                   </div>
+
+                  {/* Scoring Criteria for this milestone */}
+                  {(() => {
+                    const milestoneRubrics =
+                      milestoneRubricMap.get(milestone.id) ??
+                      milestoneRubricMap.get(null) ??
+                      []
+                    return milestoneRubrics.length > 0 ? (
+                      <RubricCriteriaCard rubrics={milestoneRubrics} />
+                    ) : null
+                  })()}
 
                   {/* Show submission form for in_progress milestone */}
                   {milestone.status === "in_progress" && currentMilestone?.id === milestone.id && (
