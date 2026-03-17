@@ -1,137 +1,588 @@
 import { createClient } from "@/utils/supabase/server"
-import { ChallengeCard } from "@/components/challenge-card"
-import { ChallengeFilters } from "@/components/challenge-filters"
-import { Database } from "@/types/supabase"
 import { redirect } from "next/navigation"
+import Link from "next/link"
+import {
+  Zap,
+  Trophy,
+  Star,
+  Layers,
+  ArrowRight,
+  CalendarClock,
+  AlertCircle,
+  ChevronRight,
+  BookOpen,
+} from "lucide-react"
 
-type ChallengeWithOrg = Database["public"]["Tables"]["challenges"]["Row"] & {
+// ── Types ─────────────────────────────────────────────────────────────────
+
+interface ActiveChallenge {
+  id: string
+  title: string
+  status: string | null
+  end_date: string | null
+  organization: { name: string } | null
+  milestonesTotal: number
+  milestonesCompleted: number
+  
+}
+
+interface UpcomingDeadline {
+  challengeId: string
+  challengeTitle: string
+  milestoneTitle: string
+  dueDate: string
+  daysLeft: number
+}
+
+interface RecommendedChallenge {
+  id: string
+  title: string
+  difficulty: string | null
+  industry: string | null
+  participation_type: string | null
+  end_date: string | null
   organization: { name: string } | null
 }
 
-interface ChallengesPageProps {
-  searchParams: Promise<{
-    q?: string
-    difficulty?: string
-    status?: string
-    participation_type?: string
-    entry_type?: string
-    category?: string
-    sort?: string
-  }>
+interface DashboardData {
+  firstName: string
+  slotsUsed: number
+  slotsMax: number
+  activeChallengesCount: number
+  completedChallengesCount: number
+  skillsCount: number
+  activeChallenges: ActiveChallenge[]
+  upcomingDeadlines: UpcomingDeadline[]
+  recommendedChallenges: RecommendedChallenge[]
 }
 
-async function getChallenges(searchParams: {
-  q?: string
-  difficulty?: string
-  status?: string
-  participation_type?: string
-  entry_type?: string
-  category?: string
-  sort?: string
-}): Promise<ChallengeWithOrg[]> {
+// ── Data Fetching ─────────────────────────────────────────────────────────
+
+async function getDashboardData(): Promise<DashboardData> {
   const supabase = await createClient()
 
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) redirect("/login")
 
-  let query = supabase
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("first_name, max_active_challenges")
+    .eq("id", user.id)
+    .single()
+
+  const firstName = profile?.first_name || "there"
+  const slotsMax = profile?.max_active_challenges ?? 3
+
+  const { data: participations } = await supabase
+    .from("challenge_participants")
+    .select(`
+      id, status, challenge_id,
+      challenges ( id, title, status, end_date, organizations ( name ) )
+    `)
+    .eq("user_id", user.id)
+
+  const allParticipations = participations || []
+  const activeStatuses = ["approved", "in_progress", "under_review"]
+
+  const activeParts = allParticipations.filter((p) =>
+    activeStatuses.includes((p.challenges as any)?.status || "")
+  )
+  const completedParts = allParticipations.filter((p) =>
+    ["completed", "closed"].includes((p.challenges as any)?.status || "")
+  )
+
+  const slotsUsed = activeParts.length
+  const activeChallengesCount = activeParts.length
+  const completedChallengesCount = completedParts.length
+
+  const { count: skillsCount } = await supabase
+    .from("student_skills")
+    .select("*", { count: "exact", head: true })
+    .eq("profile_id", user.id)
+
+  const activeChallengeIds = activeParts
+    .map((p) => (p.challenges as any)?.id)
+    .filter(Boolean)
+
+  let activeChallenges: ActiveChallenge[] = []
+
+  if (activeChallengeIds.length > 0) {
+    const { data: allMilestones } = await supabase
+      .from("milestones")
+      .select("id, challenge_id")
+      .in("challenge_id", activeChallengeIds)
+
+    const activeParticipantIds = activeParts.map((p) => p.id)
+    const { data: submissions } = await supabase
+      .from("submissions")
+      .select("milestone_id, participant_id")
+      .in("participant_id", activeParticipantIds)
+
+    const submittedMilestoneIds = new Set(
+      (submissions || []).map((s) => s.milestone_id)
+    )
+
+    activeChallenges = activeParts.map((p) => {
+      const challenge = p.challenges as any
+      const challengeMilestones = (allMilestones || []).filter(
+        (m) => m.challenge_id === challenge?.id
+      )
+      const completed = challengeMilestones.filter((m) =>
+        submittedMilestoneIds.has(m.id)
+      ).length
+
+      return {
+        id: challenge?.id,
+        title: challenge?.title || "Untitled",
+        status: challenge?.status,
+        end_date: challenge?.end_date,
+        organization: challenge?.organizations
+          ? { name: challenge.organizations.name }
+          : null,
+        milestonesTotal: challengeMilestones.length,
+        milestonesCompleted: completed,
+      }
+    })
+  }
+
+  let upcomingDeadlines: UpcomingDeadline[] = []
+
+  if (activeChallengeIds.length > 0) {
+    const now = new Date()
+    const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+    const { data: dueMilestones } = await supabase
+      .from("milestones")
+      .select("id, title, due_date, challenge_id, challenges(id, title)")
+      .in("challenge_id", activeChallengeIds)
+      .gte("due_date", now.toISOString())
+      .lte("due_date", in7.toISOString())
+      .order("due_date", { ascending: true })
+      .limit(5)
+
+    upcomingDeadlines = (dueMilestones || []).map((m) => {
+      const daysLeft = Math.ceil(
+        (new Date(m.due_date!).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+      )
+      const challenge = m.challenges as any
+      return {
+        challengeId: challenge?.id || m.challenge_id,
+        challengeTitle: challenge?.title || "Unknown",
+        milestoneTitle: m.title,
+        dueDate: m.due_date!,
+        daysLeft,
+      }
+    })
+  }
+
+  const joinedIds = new Set(allParticipations.map((p) => p.challenge_id))
+
+  const { data: recommended } = await supabase
     .from("challenges")
-    .select("*, organization:organizations(name)")
+    .select("id, title, difficulty, industry, participation_type, end_date, organizations(name)")
+    .in("status", ["approved", "in_progress"])
+    .order("created_at", { ascending: false })
+    .limit(20)
 
-  // 1. Search
-  if (searchParams.q?.trim()) {
-    const term = searchParams.q.trim()
-    query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%`)
+  const recommendedChallenges: RecommendedChallenge[] = ((recommended || []) as any[])
+    .filter((c) => !joinedIds.has(c.id))
+    .slice(0, 3)
+    .map((c) => ({
+      id: c.id,
+      title: c.title,
+      difficulty: c.difficulty,
+      industry: c.industry,
+      participation_type: c.participation_type,
+      end_date: c.end_date,
+      organization: c.organizations ? { name: c.organizations.name } : null,
+    }))
+
+  return {
+    firstName,
+    slotsUsed,
+    slotsMax,
+    activeChallengesCount,
+    completedChallengesCount,
+    skillsCount: skillsCount || 0,
+    activeChallenges,
+    upcomingDeadlines,
+    recommendedChallenges,
   }
-
-  // 2. Difficulty — cast to text for safe comparison against the enum
-  if (searchParams.difficulty && searchParams.difficulty !== "all") {
-    query = query.filter("difficulty::text", "eq", searchParams.difficulty)
-  }
-
-  // 3. Status
-  if (searchParams.status) {
-    query = query.eq("status", searchParams.status as any)
-  } else {
-    query = query.in("status", ["approved", "in_progress", "closed", "completed"])
-  }
-
-  // 4. Participation Type
-  // "solo"  → challenges that allow solo play (type = 'solo' OR 'both')
-  // "team"  → challenges that allow team play (type = 'team' OR 'both')
-  if (searchParams.participation_type === "solo") {
-    query = query.or("participation_type.eq.solo,participation_type.eq.both")
-  } else if (searchParams.participation_type === "team") {
-    query = query.or("participation_type.eq.team,participation_type.eq.both")
-  }
-
-  // 5. Entry Type
-  // "free" → entry_fee_amount IS NULL or 0
-  // "paid" → entry_fee_amount > 0 (and not null)
-  if (searchParams.entry_type === "free") {
-    query = query.or("entry_fee_amount.is.null,entry_fee_amount.eq.0")
-  } else if (searchParams.entry_type === "paid") {
-    query = query.gt("entry_fee_amount", 0)
-  }
-
-
-//  6. Industry / Category — multi-select (comma-separated)
-   if (searchParams.category) {
-    const categories = searchParams.category
-      .split(",")
-      .map((c) => c.trim())
-      .filter(Boolean)
-     if (categories.length > 0) {
-       query = query.in("industry", categories)
-    }
-   }
-
-   
-
-  // 7. Sort
-  if (searchParams.sort === "closing_soon") {
-    query = query.order("end_date", { ascending: true })
-  } else {
-    query = query.order("created_at", { ascending: false })
-  }
-
-  const { data, error } = await query
-
-  if (error) {
-    console.error("Error fetching challenges:", error.message, error.details)
-    return []
-  }
-
-  return (data as unknown as ChallengeWithOrg[]) || []
 }
 
-export default async function ChallengesPage({ searchParams }: ChallengesPageProps) {
-  const params = await searchParams
-  const challenges = await getChallenges(params)
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function formatDate(dateString: string | null) {
+  if (!dateString) return "—"
+  return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+}
+
+function difficultyColor(d: string | null) {
+  if (d === "advanced") return { bg: "rgba(239,68,68,0.1)", color: "#dc2626" }
+  if (d === "intermediate") return { bg: "rgba(234,179,8,0.1)", color: "#b45309" }
+  return { bg: "rgba(34,197,94,0.1)", color: "#16a34a" }
+}
+
+// ── Deadline Card — shared between mobile strip and desktop sidebar ─────────
+
+function DeadlineItem({ d }: { d: UpcomingDeadline }) {
+  return (
+    <Link href={`/my-challenges/${d.challengeId}`} style={{ textDecoration: "none" }}>
+      <div
+        className="flex items-start gap-2 rounded-xl p-3"
+        style={{
+          background: d.daysLeft <= 2 ? "rgba(239,68,68,0.06)" : "rgba(255,255,255,0.7)",
+          border: `1px solid ${d.daysLeft <= 2 ? "rgba(239,68,68,0.2)" : "#f3f4f6"}`,
+        }}
+      >
+        <AlertCircle
+          className="mt-0.5 h-4 w-4 flex-shrink-0"
+          style={{ color: d.daysLeft <= 2 ? "#dc2626" : "#ff9b87" }}
+        />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold" style={{ color: "#2c3e50" }}>
+            {d.milestoneTitle}
+          </p>
+          <p className="truncate text-xs" style={{ color: "#9ca3af" }}>
+            {d.challengeTitle}
+          </p>
+          <span
+            className="text-xs font-bold"
+            style={{ color: d.daysLeft <= 2 ? "#dc2626" : "#e8836f" }}
+          >
+            {d.daysLeft === 0 ? "Due today!" : d.daysLeft === 1 ? "Due tomorrow" : `${d.daysLeft} days left`}
+          </span>
+        </div>
+      </div>
+    </Link>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────
+
+export default async function StudentDashboardPage() {
+  const {
+    firstName,
+    slotsUsed,
+    slotsMax,
+    activeChallengesCount,
+    completedChallengesCount,
+    skillsCount,
+    activeChallenges,
+    upcomingDeadlines,
+    recommendedChallenges,
+  } = await getDashboardData()
+
+  const slotsFree = slotsMax - slotsUsed
+  const slotsPercent = Math.round((slotsUsed / slotsMax) * 100)
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Browse Challenges</h1>
-        <p className="text-muted-foreground">
-          Discover and join challenges that match your skills and interests.
-        </p>
+    <div className="student-portal space-y-4 md:space-y-6">
+
+      {/* ── Welcome Banner ─────────────────────────────────────────── */}
+      <div
+        className="flex flex-col gap-3 rounded-2xl p-5 sm:flex-row sm:items-center sm:justify-between md:p-7"
+        style={{ background: "linear-gradient(135deg, #2c3e50 0%, #1a252f 100%)" }}
+      >
+        <div>
+          <p className="text-lg font-bold text-white md:text-xl">
+            Welcome back, {firstName}! 👋
+          </p>
+          <p className="mt-1 text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>
+            You have{" "}
+            <span className="font-bold" style={{ color: slotsFree > 0 ? "#ff9b87" : "#f87171" }}>
+              {slotsFree} slot{slotsFree !== 1 ? "s" : ""}
+            </span>{" "}
+            remaining —{" "}
+            {slotsFree > 0 ? "ready to take on a new challenge?" : "you're at full capacity."}
+          </p>
+        </div>
+        <Link
+          href="/challenges"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white sm:w-auto sm:py-2.5"
+          style={{ background: "#ff9b87", flexShrink: 0 }}
+        >
+          Browse Challenges
+          <ArrowRight className="h-4 w-4" />
+        </Link>
       </div>
 
-      <ChallengeFilters />
+      {/* ── Stat Scorecards: 2-col on mobile, 4-col on md+ ────────── */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
 
-      {challenges.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-card p-12 text-center text-muted-foreground">
-          <p className="text-lg font-medium">No challenges found</p>
-          <p className="text-sm">Try adjusting your filters or search query.</p>
+        {/* Slots */}
+        <div className="stat-card stat-card-coral flex flex-col gap-2 md:gap-3">
+          <div className="flex items-center justify-between">
+            <p style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#9ca3af" }}>
+              Slots
+            </p>
+            <div className="stat-icon stat-icon-coral" style={{ width: 32, height: 32, borderRadius: 9 }}>
+              <Layers style={{ width: "0.875rem", height: "0.875rem" }} />
+            </div>
+          </div>
+          <p className="stat-value" style={{ fontSize: "1.625rem" }}>
+            {slotsUsed}
+            <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "#9ca3af" }}>/{slotsMax}</span>
+          </p>
+          <div style={{ height: 4, background: "rgba(255,155,135,0.2)", borderRadius: 99 }}>
+            <div style={{
+              height: "100%", borderRadius: 99,
+              background: "linear-gradient(90deg, #ff9b87, #e8836f)",
+              width: `${slotsPercent}%`,
+            }} />
+          </div>
         </div>
-      ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {challenges.map((challenge) => (
-            <ChallengeCard key={challenge.id} challenge={challenge} />
-          ))}
+
+        {/* Active */}
+        <div className="stat-card flex flex-col gap-2 md:gap-3">
+          <div className="flex items-center justify-between">
+            <p style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#9ca3af" }}>
+              Active
+            </p>
+            <div className="stat-icon" style={{ background: "rgba(99,102,241,0.12)", color: "#6366f1", width: 32, height: 32, borderRadius: 9 }}>
+              <Zap style={{ width: "0.875rem", height: "0.875rem" }} />
+            </div>
+          </div>
+          <p className="stat-value" style={{ fontSize: "1.625rem" }}>{activeChallengesCount}</p>
+          <p style={{ fontSize: "0.65rem", color: "#9ca3af" }}>in progress</p>
+        </div>
+
+        {/* Completed */}
+        <div className="stat-card stat-card-navy flex flex-col gap-2 md:gap-3">
+          <div className="flex items-center justify-between">
+            <p style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#9ca3af" }}>
+              Done
+            </p>
+            <div className="stat-icon stat-icon-navy" style={{ width: 32, height: 32, borderRadius: 9 }}>
+              <Trophy style={{ width: "0.875rem", height: "0.875rem" }} />
+            </div>
+          </div>
+          <p className="stat-value" style={{ fontSize: "1.625rem" }}>{completedChallengesCount}</p>
+          <p style={{ fontSize: "0.65rem", color: "#9ca3af" }}>completed</p>
+        </div>
+
+        {/* Skills */}
+        <div className="stat-card flex flex-col gap-2 md:gap-3">
+          <div className="flex items-center justify-between">
+            <p style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#9ca3af" }}>
+              Skills
+            </p>
+            <div className="stat-icon stat-icon-green" style={{ width: 32, height: 32, borderRadius: 9 }}>
+              <Star style={{ width: "0.875rem", height: "0.875rem" }} />
+            </div>
+          </div>
+          <p className="stat-value" style={{ fontSize: "1.625rem" }}>{skillsCount}</p>
+          <p style={{ fontSize: "0.65rem" }}>
+            <Link href="/profile" style={{ color: "#ff9b87", textDecoration: "none", fontWeight: 600 }}>
+              Manage →
+            </Link>
+          </p>
+        </div>
+
+      </div>
+
+      {/* ── Deadlines strip — mobile only (appears between cards and active list) */}
+      {upcomingDeadlines.length > 0 && (
+        <div className="stat-card stat-card-coral p-4 md:hidden">
+          <div className="mb-3 flex items-center gap-2">
+            <CalendarClock className="h-4 w-4" style={{ color: "#e8836f" }} />
+            <p className="text-sm font-bold" style={{ color: "#2c3e50" }}>Deadlines This Week</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            {upcomingDeadlines.map((d, i) => <DeadlineItem key={i} d={d} />)}
+          </div>
         </div>
       )}
+
+      {/* ── Two-Column: Active Challenges + Deadlines sidebar ──────── */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_280px]">
+
+        {/* Active challenges */}
+        <div className="stat-card p-4 md:p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <p className="font-bold" style={{ color: "#2c3e50" }}>My Active Challenges</p>
+            <Link
+              href="/my-challenges"
+              className="flex items-center gap-1 text-xs font-semibold"
+              style={{ color: "#ff9b87", textDecoration: "none" }}
+            >
+              View all <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+
+          {activeChallenges.length === 0 ? (
+            <div className="flex flex-col items-center py-8 text-center" style={{ color: "#9ca3af" }}>
+              <BookOpen className="mb-3 h-8 w-8 opacity-40" />
+              <p className="text-sm font-semibold">No active challenges</p>
+              <p className="mt-1 text-xs">
+                <Link href="/challenges" style={{ color: "#ff9b87", textDecoration: "none" }}>
+                  Browse challenges
+                </Link>{" "}
+                to get started.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {activeChallenges.map((c) => {
+                const pct = c.milestonesTotal > 0
+                  ? Math.round((c.milestonesCompleted / c.milestonesTotal) * 100)
+                  : 0
+                return (
+                  <Link key={c.id} href={`/my-challenges/${c.id}`} style={{ textDecoration: "none" }}>
+                    <div
+                      className="rounded-xl border p-3 transition-shadow hover:shadow-sm active:opacity-80"
+                      style={{ background: "#fafafa", borderColor: "#f3f4f6" }}
+                    >
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold" style={{ color: "#2c3e50" }}>
+                            {c.title}
+                          </p>
+                          <p className="text-xs" style={{ color: "#9ca3af" }}>
+                            {c.organization?.name}
+                          </p>
+                        </div>
+                        <span className="flex-shrink-0 text-xs font-bold" style={{ color: "#ff9b87" }}>
+                          {pct}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full" style={{ background: "#e5e7eb" }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            background: pct === 100
+                              ? "linear-gradient(90deg, #22c55e, #16a34a)"
+                              : "linear-gradient(90deg, #ff9b87, #e8836f)",
+                            width: `${pct}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="mt-1.5 flex justify-between">
+                        <p className="text-xs" style={{ color: "#9ca3af" }}>
+                          {c.milestonesCompleted}/{c.milestonesTotal} milestones
+                        </p>
+                        {c.end_date && (
+                          <p className="text-xs" style={{ color: "#9ca3af" }}>
+                            Due {formatDate(c.end_date)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Deadlines sidebar — desktop only */}
+        <div className="stat-card stat-card-coral hidden p-5 md:block">
+          <div className="mb-4 flex items-center gap-2">
+            <CalendarClock className="h-4 w-4" style={{ color: "#e8836f" }} />
+            <p className="font-bold" style={{ color: "#2c3e50" }}>Deadlines This Week</p>
+          </div>
+          {upcomingDeadlines.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-xs" style={{ color: "#9ca3af" }}>
+                No milestones due this week 🎉
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {upcomingDeadlines.map((d, i) => <DeadlineItem key={i} d={d} />)}
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* ── Recommended Challenges ──────────────────────────────────── */}
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <p className="font-bold" style={{ color: "#2c3e50" }}>Recommended for You</p>
+            <p className="text-xs" style={{ color: "#9ca3af" }}>Challenges you haven&apos;t joined yet</p>
+          </div>
+          <Link
+            href="/challenges"
+            className="flex items-center gap-1 text-xs font-semibold"
+            style={{ color: "#ff9b87", textDecoration: "none" }}
+          >
+            See all <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+
+        {recommendedChallenges.length === 0 ? (
+          <div className="stat-card p-6 text-center">
+            <p className="text-sm" style={{ color: "#9ca3af" }}>
+              You&apos;ve joined all available challenges!{" "}
+              <Link href="/challenges" style={{ color: "#ff9b87", textDecoration: "none" }}>
+                Check back soon.
+              </Link>
+            </p>
+          </div>
+        ) : (
+          /* 1 col → 2 col (sm) → 3 col (lg) */
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {recommendedChallenges.map((c) => {
+              const { bg, color } = difficultyColor(c.difficulty)
+              return (
+                <Link key={c.id} href={`/challenges/${c.id}`} style={{ textDecoration: "none" }}>
+                  <div className="challenge-card active:opacity-80">
+                    <div className="challenge-card-header">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold" style={{ color: "#2c3e50" }}>
+                          {c.title}
+                        </p>
+                        <p className="text-xs" style={{ color: "#9ca3af" }}>
+                          {c.organization?.name}
+                        </p>
+                      </div>
+                      {c.difficulty && (
+                        <span
+                          className="ml-2 flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-bold capitalize"
+                          style={{ background: bg, color }}
+                        >
+                          {c.difficulty}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5 px-4 pb-3">
+                      {c.industry && (
+                        <span
+                          className="rounded px-2 py-0.5 text-xs font-semibold"
+                          style={{ color: "#6366f1", background: "rgba(99,102,241,0.08)" }}
+                        >
+                          {c.industry}
+                        </span>
+                      )}
+                      {c.participation_type && (
+                        <span
+                          className="rounded px-2 py-0.5 text-xs font-semibold capitalize"
+                          style={{ color: "#2c3e50", background: "#f3f4f6" }}
+                        >
+                          {c.participation_type}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="challenge-card-footer">
+                      <span className="text-xs" style={{ color: "#9ca3af" }}>
+                        {c.end_date ? `Ends ${formatDate(c.end_date)}` : "Open-ended"}
+                      </span>
+                      <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#ff9b87" }}>
+                        View <ChevronRight className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
     </div>
   )
 }

@@ -71,8 +71,14 @@ async function getChallenges(searchParams: {
   }
 
   // 6. Industry / Category
-  if (searchParams.category && searchParams.category !== "all") {
-    query = query.eq("industry", searchParams.category)
+  if (searchParams.category) {
+  const categories = searchParams.category
+    .split(",")
+    .map((c) => decodeURIComponent(c.trim()))
+    .filter(Boolean)
+  if (categories.length > 0) {
+    query = query.in("industry", categories)
+  }
   }
 
   // 7. Sort

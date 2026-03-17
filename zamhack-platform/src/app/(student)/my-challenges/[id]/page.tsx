@@ -1,3 +1,4 @@
+import { MessageCompanyButton } from "@/components/message-company-button"
 import { createClient } from "@/utils/supabase/server"
 import { Database } from "@/types/supabase"
 import { redirect } from "next/navigation"
@@ -251,10 +252,7 @@ export default async function ChallengeProgressPage({
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" disabled>
-            <MessageSquare className="mr-2 h-4 w-4" />
-            Message Company
-          </Button>
+         <MessageCompanyButton challengeId={challenge.id} />
           <Button variant="outline" disabled>
             Withdraw
           </Button>
