@@ -1,12 +1,11 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
---
--- See bottom of file for implementation notes.
 
 CREATE TABLE public.challenge_evaluators (
   challenge_id uuid NOT NULL,
   evaluator_id uuid NOT NULL,
   assigned_at timestamp with time zone DEFAULT now(),
+  review_deadline timestamp with time zone,
   CONSTRAINT challenge_evaluators_pkey PRIMARY KEY (challenge_id, evaluator_id),
   CONSTRAINT challenge_evaluators_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id),
   CONSTRAINT challenge_evaluators_evaluator_id_fkey FOREIGN KEY (evaluator_id) REFERENCES public.profiles(id)
@@ -22,6 +21,21 @@ CREATE TABLE public.challenge_participants (
   CONSTRAINT challenge_participants_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id),
   CONSTRAINT challenge_participants_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
   CONSTRAINT challenge_participants_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id)
+);
+CREATE TABLE public.challenge_pending_edits (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  challenge_id uuid NOT NULL,
+  submitted_by uuid NOT NULL,
+  payload jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])),
+  admin_note text,
+  created_at timestamp with time zone DEFAULT now(),
+  reviewed_at timestamp with time zone,
+  reviewed_by uuid,
+  CONSTRAINT challenge_pending_edits_pkey PRIMARY KEY (id),
+  CONSTRAINT challenge_pending_edits_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id),
+  CONSTRAINT challenge_pending_edits_submitted_by_fkey FOREIGN KEY (submitted_by) REFERENCES public.profiles(id),
+  CONSTRAINT challenge_pending_edits_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.challenge_skills (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -53,10 +67,11 @@ CREATE TABLE public.challenges (
   updated_at timestamp with time zone DEFAULT now(),
   entry_fee_amount numeric DEFAULT 0,
   currency text DEFAULT 'PHP'::text,
-  industries text[] DEFAULT '{}',
-  location_type text CHECK (location_type IN ('online', 'onsite')),
+  industries ARRAY DEFAULT '{}'::text[],
+  location_type text CHECK (location_type = ANY (ARRAY['online'::text, 'onsite'::text])),
   location_details text,
   is_perpetual boolean NOT NULL DEFAULT false,
+  scoring_mode text NOT NULL DEFAULT 'company_only'::text CHECK (scoring_mode = ANY (ARRAY['company_only'::text, 'evaluator_only'::text, 'average'::text])),
   CONSTRAINT challenges_pkey PRIMARY KEY (id),
   CONSTRAINT challenges_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id),
   CONSTRAINT challenges_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id)
@@ -129,6 +144,32 @@ CREATE TABLE public.organizations (
   status text DEFAULT 'pending'::text,
   CONSTRAINT organizations_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.payments (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  challenge_id uuid NOT NULL,
+  amount integer NOT NULL CHECK (amount > 0),
+  currency text NOT NULL DEFAULT 'PHP'::text,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'paid'::text, 'failed'::text, 'refunded'::text])),
+  provider text NOT NULL DEFAULT 'paymongo'::text,
+  checkout_session_id text UNIQUE,
+  payment_intent_id text UNIQUE,
+  created_at timestamp with time zone DEFAULT now(),
+  paid_at timestamp with time zone,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT payments_pkey PRIMARY KEY (id),
+  CONSTRAINT payments_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT payments_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id)
+);
+CREATE TABLE public.platform_settings (
+  id boolean NOT NULL DEFAULT true CHECK (id),
+  maintenance_mode boolean DEFAULT false,
+  allow_new_signups boolean DEFAULT true,
+  default_currency text DEFAULT 'PHP'::text,
+  updated_at timestamp with time zone DEFAULT now(),
+  advanced_beginner_weekly_limit integer DEFAULT 1,
+  CONSTRAINT platform_settings_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.profiles (
   id uuid NOT NULL,
   avatar_url text,
@@ -148,7 +189,6 @@ CREATE TABLE public.profiles (
   updated_at timestamp with time zone DEFAULT now(),
   first_name text,
   last_name text,
-  middle_name text,
   address_house_no text,
   address_street text,
   address_barangay text,
@@ -156,6 +196,7 @@ CREATE TABLE public.profiles (
   address_zip text,
   address_country text,
   status text DEFAULT 'active'::text,
+  middle_name text,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id),
   CONSTRAINT profiles_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id)
@@ -163,10 +204,10 @@ CREATE TABLE public.profiles (
 CREATE TABLE public.rubrics (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   challenge_id uuid NOT NULL,
-  milestone_id uuid,
   criteria_name text NOT NULL,
   max_points integer DEFAULT 10,
   created_at timestamp with time zone DEFAULT now(),
+  milestone_id uuid,
   CONSTRAINT rubrics_pkey PRIMARY KEY (id),
   CONSTRAINT rubrics_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id),
   CONSTRAINT rubrics_milestone_id_fkey FOREIGN KEY (milestone_id) REFERENCES public.milestones(id)
@@ -189,6 +230,19 @@ CREATE TABLE public.skills (
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT skills_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.student_earned_skills (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  profile_id uuid NOT NULL,
+  skill_id uuid NOT NULL,
+  tier text NOT NULL CHECK (tier = ANY (ARRAY['beginner'::text, 'intermediate'::text, 'advanced'::text])),
+  source text NOT NULL DEFAULT 'challenge'::text CHECK (source = ANY (ARRAY['challenge'::text, 'admin'::text])),
+  challenge_id uuid,
+  awarded_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT student_earned_skills_pkey PRIMARY KEY (id),
+  CONSTRAINT student_earned_skills_profile_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id),
+  CONSTRAINT student_earned_skills_skill_fkey FOREIGN KEY (skill_id) REFERENCES public.skills(id),
+  CONSTRAINT student_earned_skills_challenge_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id)
+);
 CREATE TABLE public.student_skills (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   profile_id uuid,
@@ -210,6 +264,17 @@ CREATE TABLE public.submissions (
   CONSTRAINT submissions_pkey PRIMARY KEY (id),
   CONSTRAINT submissions_milestone_id_fkey FOREIGN KEY (milestone_id) REFERENCES public.milestones(id),
   CONSTRAINT submissions_participant_id_fkey FOREIGN KEY (participant_id) REFERENCES public.challenge_participants(id)
+);
+CREATE TABLE public.talent_match_cache (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL,
+  student_id uuid NOT NULL,
+  score integer NOT NULL CHECK (score >= 0 AND score <= 100),
+  reason text,
+  computed_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT talent_match_cache_pkey PRIMARY KEY (id),
+  CONSTRAINT talent_match_cache_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.profiles(id),
+  CONSTRAINT talent_match_cache_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.team_members (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -242,164 +307,3 @@ CREATE TABLE public.winners (
   CONSTRAINT winners_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id),
   CONSTRAINT winners_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
 );
-
--- New tables added after initial schema (run these migrations in order):
-
-CREATE TABLE public.student_earned_skills (
-  id uuid NOT NULL DEFAULT uuid_generate_v4(),
-  profile_id uuid NOT NULL,
-  skill_id uuid NOT NULL,
-  tier USER-DEFINED NOT NULL,                        -- proficiency_level enum: beginner | intermediate | advanced
-  source text NOT NULL DEFAULT 'challenge'::text     -- 'challenge' or 'admin'
-    CHECK (source IN ('challenge', 'admin')),
-  challenge_id uuid,                                 -- the challenge that most recently set this tier
-  awarded_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT student_earned_skills_pkey PRIMARY KEY (id),
-  CONSTRAINT student_earned_skills_profile_skill_unique UNIQUE (profile_id, skill_id),
-  CONSTRAINT student_earned_skills_profile_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id),
-  CONSTRAINT student_earned_skills_skill_fkey FOREIGN KEY (skill_id) REFERENCES public.skills(id),
-  CONSTRAINT student_earned_skills_challenge_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id)
-);
-
-CREATE TABLE public.payments (
-  id uuid NOT NULL DEFAULT uuid_generate_v4(),
-  user_id uuid NOT NULL,
-  challenge_id uuid NOT NULL,
-  amount numeric NOT NULL,
-  currency text NOT NULL DEFAULT 'PHP'::text,
-  provider text NOT NULL DEFAULT 'stripe'::text,
-  status text NOT NULL DEFAULT 'pending'::text
-    CHECK (status IN ('pending', 'paid', 'failed', 'refunded')),
-  checkout_session_id text,
-  payment_intent_id text,
-  paid_at timestamp with time zone,
-  created_at timestamp with time zone DEFAULT now(),
-  updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT payments_pkey PRIMARY KEY (id),
-  CONSTRAINT payments_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
-  CONSTRAINT payments_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id)
-);
-
-CREATE TABLE public.platform_settings (
-  id boolean NOT NULL DEFAULT true,                  -- singleton key; always true
-  maintenance_mode boolean DEFAULT false,
-  allow_new_signups boolean DEFAULT true,
-  default_currency text DEFAULT 'PHP'::text,
-  updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT platform_settings_pkey PRIMARY KEY (id),
-  CONSTRAINT platform_settings_singleton CHECK (id = true)
-);
-
-CREATE TABLE public.challenge_pending_edits (
-  id uuid NOT NULL DEFAULT uuid_generate_v4(),
-  challenge_id uuid NOT NULL,
-  submitted_by uuid NOT NULL,
-  payload jsonb NOT NULL,
-  status text NOT NULL DEFAULT 'pending'::text
-    CHECK (status IN ('pending', 'approved', 'rejected')),
-  reviewed_by uuid,
-  reviewed_at timestamp with time zone,
-  admin_note text,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT challenge_pending_edits_pkey PRIMARY KEY (id),
-  CONSTRAINT challenge_pending_edits_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id),
-  CONSTRAINT challenge_pending_edits_submitted_by_fkey FOREIGN KEY (submitted_by) REFERENCES public.profiles(id),
-  CONSTRAINT challenge_pending_edits_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES public.profiles(id)
-);
-
--- Column added to challenges after initial schema:
-ALTER TABLE public.challenges ADD COLUMN scoring_mode text NOT NULL DEFAULT 'company_only'::text
-  CHECK (scoring_mode IN ('company_only', 'evaluator_only', 'average'));
-
--- review_deadline added to challenge_evaluators after initial schema:
-ALTER TABLE public.challenge_evaluators ADD COLUMN review_deadline timestamp with time zone;
-
--- ─────────────────────────────────────────────────────────────────────────────
--- IMPLEMENTATION NOTES
--- ─────────────────────────────────────────────────────────────────────────────
-
--- evaluations.reviewer_id
---   NULL when the evaluation was written by the LLM auto-evaluator.
---   Non-null = a company_admin / company_member or evaluator profile.
---   The auto-evaluator always writes is_draft = true so companies review before publishing.
-
--- scores.feedback
---   Populated with per-criterion feedback by the LLM auto-evaluator.
---   Human reviewers currently leave this null (only evaluations.feedback is used).
-
--- scores table in TypeScript
---   The `scores` table is missing from some versions of the auto-generated
---   supabase.ts types. Workaround already in place: cast as `"scores" as any`
---   in grading-actions.ts and auto-evaluate.ts.
-
--- rubrics.milestone_id
---   NULL = challenge-level rubric (legacy / Scoring Tab additions without a milestone context).
---   Non-null = criterion is scoped to that specific milestone.
---   Both challenge_id and milestone_id are stored so rubrics can be queried either way.
---   Migration: ALTER TABLE public.rubrics ADD COLUMN milestone_id uuid REFERENCES public.milestones(id);
-
--- Auto-evaluation flow
---   submissions → (after Next.js after()) → src/lib/auto-evaluate.ts
---     1. Fetches rubrics for the submission's milestone (milestone_id = milestoneId)
---        Falls back to challenge-level rubrics (milestone_id IS NULL) if none found.
---     2. Fetches GitHub README if github_link is present
---     3. Calls Claude Haiku API with structured prompt
---     4. Writes evaluations row (reviewer_id=null, is_draft=true)
---     5. Writes scores rows (one per rubric criterion)
---   Trigger: submitMilestone server action in submission-actions.ts
---   Uses service-role Supabase client (bypasses RLS).
-
--- challenge_leaderboard (VIEW)
---   Aggregates total evaluation scores and milestone completion count per
---   participant per challenge. Used for leaderboard display and winners calculation.
---   Only non-draft evaluations (is_draft = false) count toward totals.
-
--- winners
---   Populated when a challenge is closed (closeChallenge action).
---   Top 3 participants ranked by total score from challenge_leaderboard view.
---   Perpetual challenges (is_perpetual = true) skip winner calculation entirely.
-
--- platform_settings
---   Single-row table. id column is boolean (always true) acting as a singleton key.
-
--- student_earned_skills
---   Tracks skills that students have earned by completing challenges (separate from
---   student_skills which are self-reported portfolio skills).
---   UNIQUE constraint on (profile_id, skill_id): one row per student per skill.
---   Tier is upgraded in-place via src/lib/award-skills.ts — never downgraded.
---   Tier rank: beginner(1) < intermediate(2) < advanced(3). Only writes if new rank > existing rank.
---
---   When awarded (normal challenges):
---     closeChallenge() in src/app/challenges/actions.ts loops over active participants
---     and calls awardChallengeSkills(supabase, challengeId, profileId) for each.
---
---   When awarded (perpetual challenges):
---     submitMilestone() in src/app/challenges/submission-actions.ts checks if all milestones
---     are now submitted after each submission. If yes, calls awardChallengeSkills() immediately.
---     No close event is needed for perpetual challenges.
---
---   When awarded (admin):
---     Admin user management panel can manually grant skills (source = 'admin').
-
--- challenge_skills + student_earned_skills = participation gate
---   Enforced in src/lib/participation-gate.ts (checkParticipationGate):
---     beginner challenge   → no gate (anyone can join)
---     intermediate challenge → student must have ≥1 matching challenge_skill earned at any tier
---     advanced challenge    → student must have ≥1 matching challenge_skill earned at intermediate or advanced
---   "Matching" means the skill_id appears in both challenge_skills and student_earned_skills for that student.
---   If the challenge has no rows in challenge_skills, the gate is skipped.
---   Gate is checked:
---     1. Server-side on the challenge detail page (pre-rendered locked button)
---     2. In joinChallenge() server action before inserting challenge_participants row
-
--- challenges.scoring_mode
---   Determines which evaluations count toward the final score used in winner calculation:
---     company_only   → only evaluations from company_admin / company_member reviewers
---     evaluator_only → only evaluations from evaluator role profiles
---     average        → average of company and evaluator scores
---   Used in src/lib/scoring-utils.ts (getFinalScore) and in closeChallenge / recalculateWinners.
-
--- payments
---   Created when a student initiates checkout for a paid challenge (entry_fee_amount > 0).
---   status transitions: pending → paid (on webhook) | failed | refunded
---   Student is enrolled in challenge_participants only after status = 'paid'.
