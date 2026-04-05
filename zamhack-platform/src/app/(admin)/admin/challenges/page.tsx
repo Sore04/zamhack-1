@@ -13,9 +13,11 @@ import {
   Layers,
   Ban,
   ShieldCheck,
+  Zap,
 } from "lucide-react"
 import "@/app/(admin)/admin.css"
 import { GuardrailsForm } from "./guardrails-form"
+import { XpSettingsForm } from "./xp-settings-form"
 
 type Challenge = Database["public"]["Tables"]["challenges"]["Row"] & {
   organization?: { name: string | null } | null
@@ -66,12 +68,12 @@ export default async function AdminChallengesPage({
 
   if (error) console.error(error)
 
-  // Fetch platform settings for guardrails
-  const { data: platformSettings } = await supabase
+  // Fetch platform settings for guardrails and XP config
+  const { data: platformSettings } = await (supabase
     .from("platform_settings")
-    .select("advanced_beginner_weekly_limit")
+    .select("advanced_beginner_weekly_limit, xp_score_threshold, xp_penalty, xp_base_min, xp_base_max")
     .eq("id", true)
-    .single()
+    .single() as any)
 
   const allChallenges = (challenges || []) as Challenge[]
 
@@ -137,6 +139,7 @@ export default async function AdminChallengesPage({
     { key: "rejected",        label: "Rejected",        icon: XCircle,      count: counts.rejected },
     { key: "cancelled",       label: "Cancelled",       icon: Ban,          count: counts.cancelled },
     { key: "guardrails",      label: "Guardrails",      icon: ShieldCheck,  count: 0 },
+    { key: "xp_settings",    label: "XP Settings",     icon: Zap,          count: 0 },
   ]
 
   // --- Badge helpers ---
@@ -221,8 +224,8 @@ export default async function AdminChallengesPage({
           <div className="admin-tabs" style={{ marginBottom: 0, minWidth: "max-content" }}>
             {tabs.map((tab) => {
               const Icon = tab.icon
-              // Always show "all" and "guardrails" tabs; others only if they have items or are active
-              if (tab.key !== "all" && tab.key !== "guardrails" && tab.count === 0 && activeTab !== tab.key) return null
+              // Always show "all", "guardrails", and "xp_settings" tabs; others only if they have items or are active
+              if (tab.key !== "all" && tab.key !== "guardrails" && tab.key !== "xp_settings" && tab.count === 0 && activeTab !== tab.key) return null
               return (
                 <a
                   key={tab.key}
@@ -251,8 +254,28 @@ export default async function AdminChallengesPage({
           </div>
         )}
 
-        {/* Challenge list (hidden when Guardrails tab is active) */}
-        {activeTab !== "guardrails" && <>
+        {/* XP Settings tab content */}
+        {activeTab === "xp_settings" && (
+          <div style={{ padding: "1.5rem" }}>
+            <XpSettingsForm
+              scoreThreshold={(platformSettings as any)?.xp_score_threshold ?? 70}
+              penalty={(platformSettings as any)?.xp_penalty ?? 50}
+              baseMin={(platformSettings as any)?.xp_base_min ?? 50}
+              baseMax={(platformSettings as any)?.xp_base_max ?? 400}
+              challenges={allChallenges
+                .filter((c) => c.status !== "draft")
+                .map((c) => ({
+                  id: c.id,
+                  title: c.title,
+                  difficulty: c.difficulty ?? null,
+                  xp_multiplier: (c as any).xp_multiplier ?? 1.0,
+                }))}
+            />
+          </div>
+        )}
+
+        {/* Challenge list (hidden when special tabs are active) */}
+        {activeTab !== "guardrails" && activeTab !== "xp_settings" && <>
 
         {/* Search row */}
         <div style={{
@@ -482,7 +505,7 @@ export default async function AdminChallengesPage({
         )}
 
         {/* End challenge list */}
-        </>}
+        </> }
       </div>
     </div>
   )

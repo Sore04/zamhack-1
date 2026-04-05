@@ -560,3 +560,67 @@ export async function adjustStudentXp(
   revalidatePath("/admin/users")
   return { success: true }
 }
+
+export async function updateXpGlobalSettings(settings: {
+  scoreThreshold: number
+  penalty: number
+  baseMin: number
+  baseMax: number
+}): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: "Unauthorized" }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single()
+
+  if (profile?.role !== "admin") return { success: false, error: "Unauthorized" }
+
+  const { error } = await (supabase
+    .from("platform_settings")
+    .update({
+      xp_score_threshold: settings.scoreThreshold,
+      xp_penalty: settings.penalty,
+      xp_base_min: settings.baseMin,
+      xp_base_max: settings.baseMax,
+    })
+    .eq("id", true) as any)
+
+  if (error) return { success: false, error: error.message }
+
+  revalidatePath("/admin/challenges")
+  return { success: true }
+}
+
+export async function updateChallengeXpMultiplier(
+  challengeId: string,
+  multiplier: number
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: "Unauthorized" }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single()
+
+  if (profile?.role !== "admin") return { success: false, error: "Unauthorized" }
+  if (multiplier <= 0) return { success: false, error: "Multiplier must be positive" }
+
+  const { error } = await (supabase
+    .from("challenges")
+    .update({ xp_multiplier: multiplier })
+    .eq("id", challengeId) as any)
+
+  if (error) return { success: false, error: error.message }
+
+  revalidatePath("/admin/challenges")
+  return { success: true }
+}

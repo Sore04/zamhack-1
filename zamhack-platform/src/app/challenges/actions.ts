@@ -533,14 +533,30 @@ export async function closeChallenge(challengeId: string, forceClose = false): P
     .eq("challenge_id", challengeId)
     .eq("status", "active")
 
-  // Fetch challenge difficulty once, used for XP multiplier
-  const { data: challengeForXp } = await supabase
+  // Fetch challenge difficulty and per-challenge XP multiplier
+  const { data: challengeForXp } = await (supabase
     .from("challenges")
-    .select("difficulty")
+    .select("difficulty, xp_multiplier")
     .eq("id", challengeId)
-    .single()
+    .single() as any)
 
   const challengeDifficulty = (challengeForXp as any)?.difficulty ?? "beginner"
+  const challengeXpMultiplier: number = (challengeForXp as any)?.xp_multiplier ?? 1.0
+
+  // Fetch global XP formula settings from platform_settings
+  const { data: xpSettings } = await (supabase
+    .from("platform_settings")
+    .select("xp_score_threshold, xp_penalty, xp_base_min, xp_base_max")
+    .eq("id", true)
+    .single() as any)
+
+  const xpFormulaOptions = {
+    xpMultiplier: challengeXpMultiplier,
+    scoreThreshold: (xpSettings as any)?.xp_score_threshold ?? 70,
+    penalty: (xpSettings as any)?.xp_penalty ?? 50,
+    baseMin: (xpSettings as any)?.xp_base_min ?? 50,
+    baseMax: (xpSettings as any)?.xp_base_max ?? 400,
+  }
 
   for (const p of activeParticipants ?? []) {
     if (!p.user_id) continue
@@ -578,7 +594,7 @@ export async function closeChallenge(challengeId: string, forceClose = false): P
       scoringMode,
     }) ?? 0
 
-    await awardXp(supabase, p.user_id, challengeDifficulty, finalScore)
+    await awardXp(supabase, p.user_id, challengeDifficulty, finalScore, xpFormulaOptions)
   }
 
   revalidatePath(`/challenges/${challengeId}`)

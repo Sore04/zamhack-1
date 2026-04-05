@@ -14,10 +14,6 @@ function deriveRank(xp: number): XpRank {
   return "beginner"
 }
 
-function computeBaseXp(score: number): number {
-  if (score < 70) return -50
-  return Math.round(50 + ((score - 70) / 30) * 350)
-}
 
 export type XpAwardResult = {
   xpDelta: number
@@ -28,11 +24,20 @@ export type XpAwardResult = {
   penaltyApplied: boolean
 }
 
+export interface XpFormulaOptions {
+  xpMultiplier?: number   // per-challenge bonus multiplier (default 1.0)
+  scoreThreshold?: number // score below this earns a penalty (default 70)
+  penalty?: number        // XP deducted when score < threshold (default 50)
+  baseMin?: number        // min XP for a passing score (default 50)
+  baseMax?: number        // max XP for a perfect score (default 400)
+}
+
 export async function awardXp(
   supabase: SupabaseClient,
   profileId: string,
   challengeDifficulty: string,
-  finalScore: number // 0–100
+  finalScore: number, // 0–100
+  options?: XpFormulaOptions
 ): Promise<XpAwardResult> {
   const fallback: XpAwardResult = {
     xpDelta: 0,
@@ -57,9 +62,21 @@ export async function awardXp(
   const currentXp: number = (profile as any).xp_points ?? 0
   const currentRank: XpRank = ((profile as any).xp_rank ?? "beginner") as XpRank
 
-  const baseXp = computeBaseXp(finalScore)
-  const multiplier = MULTIPLIER[currentRank]?.[challengeDifficulty] ?? 1.0
-  let xpDelta = Math.round(baseXp * multiplier)
+  const {
+    xpMultiplier = 1.0,
+    scoreThreshold = 70,
+    penalty = 50,
+    baseMin = 50,
+    baseMax = 400,
+  } = options ?? {}
+
+  const baseXp = (() => {
+    if (finalScore < scoreThreshold) return -penalty
+    return Math.round(baseMin + ((finalScore - scoreThreshold) / (100 - scoreThreshold)) * (baseMax - baseMin))
+  })()
+
+  const rankMultiplier = MULTIPLIER[currentRank]?.[challengeDifficulty] ?? 1.0
+  let xpDelta = Math.round(baseXp * rankMultiplier * xpMultiplier)
 
   // Penalty only applies to Advanced rank students.
   // Beginner and Intermediate: clamp any negative delta to 0.

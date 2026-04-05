@@ -402,7 +402,12 @@ export default async function StudentDashboardPage() {
             </div>
           </div>
           <p className="stat-value" style={{ fontSize: "1.625rem" }}>{xpPoints.toLocaleString()}</p>
-          <p style={{ fontSize: "0.65rem", color: "#9ca3af", textTransform: "capitalize" }}>{xpRank} rank</p>
+          <p style={{ fontSize: "0.65rem", textTransform: "capitalize" }}>
+            <span style={{ color: "#9ca3af" }}>{xpRank} rank · </span>
+            <Link href="/profile" style={{ color: "#eab308", textDecoration: "none", fontWeight: 600 }}>
+              How to earn →
+            </Link>
+          </p>
         </div>
 
       </div>
